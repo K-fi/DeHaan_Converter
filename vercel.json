@@ -1,4 +1,4 @@
 {
   "installCommand": "npm install --no-audit --no-fund",
-  "buildCommand": "npx vite build"
+  "buildCommand": "npm run build"
 }
