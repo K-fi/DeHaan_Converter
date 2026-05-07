@@ -22,6 +22,7 @@ export interface ConverterArgs {
   maatRef: ColRef;
   merkRef: ColRef;
   kleurRef: ColRef;
+  kleurMapping: Record<string, string>;
   artikelcodeRef: ColRef;
   omschrijvingRefs: ColRef[];
   productnaamRefs: ColRef[];
@@ -94,6 +95,7 @@ export function buildOutputRows(args: ConverterArgs): Record<string, unknown>[] 
     maatRef,
     merkRef,
     kleurRef,
+    kleurMapping,
     artikelcodeRef,
     omschrijvingRefs,
     productnaamRefs,
@@ -147,7 +149,7 @@ export function buildOutputRows(args: ConverterArgs): Record<string, unknown>[] 
       'Maat': getVal(sheetsData, idx, maatRef),
       'Merk': getVal(sheetsData, idx, merkRef),
       'KMS Synchronisatie': 'Ja',
-      'Kleur': getVal(sheetsData, idx, kleurRef),
+      'Kleur': (() => { const v = getVal(sheetsData, idx, kleurRef); return kleurMapping[v] ?? v; })(),
       'Productnaam': productnaamRaw,
       'Artikelcode': getVal(sheetsData, idx, artikelcodeRef),
       'Artikelcode Hoofdleverancier zoekveld': bestelnummer,
