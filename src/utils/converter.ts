@@ -4,26 +4,27 @@ import {
   DEFAULT_ARTIKELGROEP,
   DEFAULT_EENHEID,
 } from '../constants/converterMappings';
-import type { ParsedFile } from '../types';
+import type { ColRef } from '../types';
 
 export interface ConverterArgs {
-  supplFile: ParsedFile;
+  sheetsData: Record<string, Record<string, unknown>[]>;
+  rowCount: number;
   startingCode: number;
   hoofdleverancier: string;
   btwInkoop: string;
-  barcodeCol: string;
-  productsoortCol: string;
-  kostprijsCol: string;
-  bestelnummerCol: string;
-  verkoopprijsCol: string;
-  veiligheidsclassificatieCol: string;
-  geslachtCol: string;
-  maatCol: string;
-  merkCol: string;
-  kleurCol: string;
-  artikelcodeCol: string;
-  omschrijvingCols: string[];
-  productnaamCols: string[];
+  barcodeRef: ColRef;
+  productsoortRef: ColRef;
+  kostprijsRef: ColRef;
+  bestelnummerRef: ColRef;
+  verkoopprijsRef: ColRef;
+  veiligheidsclassificatieRef: ColRef;
+  geslachtRef: ColRef;
+  maatRef: ColRef;
+  merkRef: ColRef;
+  kleurRef: ColRef;
+  artikelcodeRef: ColRef;
+  omschrijvingRefs: ColRef[];
+  productnaamRefs: ColRef[];
 }
 
 export const OUTPUT_COLS = [
@@ -61,56 +62,63 @@ export const OUTPUT_COLS = [
 
 function firstOfCurrentMonth(): string {
   const now = new Date();
-  const d = '01';
   const m = String(now.getMonth() + 1).padStart(2, '0');
-  const y = now.getFullYear();
-  return `${d}-${m}-${y}`;
+  return `01-${m}-${now.getFullYear()}`;
 }
 
-function col(row: Record<string, unknown>, key: string): string {
-  return key ? String(row[key] ?? '').trim() : '';
+function getVal(
+  sheetsData: Record<string, Record<string, unknown>[]>,
+  rowIdx: number,
+  ref: ColRef,
+): string {
+  if (!ref.col) return '';
+  const rows = sheetsData[ref.sheet] ?? [];
+  const row = rows[rowIdx] ?? {};
+  return String(row[ref.col] ?? '').trim();
 }
 
 export function buildOutputRows(args: ConverterArgs): Record<string, unknown>[] {
   const {
-    supplFile,
+    sheetsData,
+    rowCount,
     startingCode,
     hoofdleverancier,
     btwInkoop,
-    barcodeCol,
-    productsoortCol,
-    kostprijsCol,
-    bestelnummerCol,
-    verkoopprijsCol,
-    veiligheidsclassificatieCol,
-    geslachtCol,
-    maatCol,
-    merkCol,
-    kleurCol,
-    artikelcodeCol,
-    omschrijvingCols,
-    productnaamCols,
+    barcodeRef,
+    productsoortRef,
+    kostprijsRef,
+    bestelnummerRef,
+    verkoopprijsRef,
+    veiligheidsclassificatieRef,
+    geslachtRef,
+    maatRef,
+    merkRef,
+    kleurRef,
+    artikelcodeRef,
+    omschrijvingRefs,
+    productnaamRefs,
   } = args;
 
   const activiefVanaf = firstOfCurrentMonth();
 
-  return supplFile.data.map((row, idx) => {
-    const productsoort = col(row, productsoortCol);
+  return Array.from({ length: rowCount }, (_, idx) => {
+    const productsoort = getVal(sheetsData, idx, productsoortRef);
     const eenheid = PRODUCTSOORT_TO_EENHEID[productsoort] ?? DEFAULT_EENHEID;
     const artikelgroep = PRODUCTSOORT_TO_ARTIKELGROEP[productsoort] ?? DEFAULT_ARTIKELGROEP;
 
-    const omschrijvingRaw = omschrijvingCols
-      .map(c => col(row, c))
+    const omschrijvingRaw = omschrijvingRefs
+      .map(ref => getVal(sheetsData, idx, ref))
       .filter(Boolean)
       .join(' ');
 
-    const productnaamRaw = productnaamCols
-      .map(c => col(row, c))
+    const productnaamRaw = productnaamRefs
+      .map(ref => getVal(sheetsData, idx, ref))
       .filter(Boolean)
       .join(' ');
 
-    const bestelnummer = col(row, bestelnummerCol);
-    const geslacht = geslachtCol ? (col(row, geslachtCol) || 'Unisex') : 'Unisex';
+    const bestelnummer = getVal(sheetsData, idx, bestelnummerRef);
+    const geslachtVal = getVal(sheetsData, idx, geslachtRef);
+    const geslacht = geslachtRef.col ? (geslachtVal || 'Unisex') : 'Unisex';
 
     return {
       'Code': startingCode + idx + 1,
@@ -118,7 +126,7 @@ export function buildOutputRows(args: ConverterArgs): Record<string, unknown>[] 
       'Omschrijving': omschrijvingRaw.slice(0, 60),
       'Extra omschrijving': omschrijvingRaw,
       'Artikelgroep: Omschrijving': artikelgroep,
-      'Barcode': col(row, barcodeCol),
+      'Barcode': getVal(sheetsData, idx, barcodeRef),
       'Productsoort': productsoort,
       'Inkoop': 'Ja',
       'Ordergestuurd': 'Ja',
@@ -126,22 +134,22 @@ export function buildOutputRows(args: ConverterArgs): Record<string, unknown>[] 
       'Voorraad': 'Ja',
       'Eenheid': eenheid,
       'Btw-code: Verkoop': '2',
-      'Kostprijs': col(row, kostprijsCol),
+      'Kostprijs': getVal(sheetsData, idx, kostprijsRef),
       'Inkoopeenheid': eenheid,
       'Eenheidsfactor': '1',
       'Bestelnummer leverancier': bestelnummer,
-      'Verkoopprijs': col(row, verkoopprijsCol),
+      'Verkoopprijs': getVal(sheetsData, idx, verkoopprijsRef),
       'Hoofdleverancier': hoofdleverancier,
       'Btw-code: Inkoop': btwInkoop,
-      'Veiligheidsclassificatie': col(row, veiligheidsclassificatieCol),
+      'Veiligheidsclassificatie': getVal(sheetsData, idx, veiligheidsclassificatieRef),
       '2026 Controle JW': 'NG',
       'Geslacht': geslacht,
-      'Maat': col(row, maatCol),
-      'Merk': col(row, merkCol),
+      'Maat': getVal(sheetsData, idx, maatRef),
+      'Merk': getVal(sheetsData, idx, merkRef),
       'KMS Synchronisatie': 'Ja',
-      'Kleur': col(row, kleurCol),
+      'Kleur': getVal(sheetsData, idx, kleurRef),
       'Productnaam': productnaamRaw,
-      'Artikelcode': col(row, artikelcodeCol),
+      'Artikelcode': getVal(sheetsData, idx, artikelcodeRef),
       'Artikelcode Hoofdleverancier zoekveld': bestelnummer,
     };
   });

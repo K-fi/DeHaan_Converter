@@ -3,9 +3,11 @@ import Stepper from '../components/Stepper';
 import FileUploadCard from '../components/FileUploadCard';
 import PreviewTable from '../components/PreviewTable';
 import Banner from '../components/Banner';
+import SheetPicker from '../components/SheetPicker';
 import { findBestCol, EAN_HINTS, PRICE_HINTS, CODE_HINTS, DESC_HINTS, UNIT_HINTS, CURR_HINTS } from '../utils/columns';
 import { normalizeEan, looksLikeEan, fmtDate } from '../utils/matching';
-import { downloadXLSX, downloadCSV } from '../utils/xlsx';
+import { sheetTo2D, downloadXLSX, downloadCSV } from '../utils/xlsx';
+import { detectHeaderRow, parseFromHeaderRow } from '../utils/headers';
 import type {
   ParsedFile,
   BannerInfo,
@@ -16,38 +18,95 @@ import type {
   ReportRow,
 } from '../types';
 
+type SheetCache = Record<string, { cols: string[]; data: Record<string, unknown>[] }>;
+
 export default function PriceUpdater() {
   const [step, setStep] = useState(1);
 
   const [exactFile, setExactFile] = useState<ParsedFile | null>(null);
   const [supplFile, setSupplFile] = useState<ParsedFile | null>(null);
 
-  const [exactEan, setExactEan] = useState('');
-  const [exactCode, setExactCode] = useState('');
+  // Column selections
+  const [exactEan,   setExactEan]   = useState('');
+  const [exactCode,  setExactCode]  = useState('');
   const [exactPrice, setExactPrice] = useState('');
-  const [supplEan, setSupplEan] = useState('');
+  const [supplEan,   setSupplEan]   = useState('');
   const [supplExtraEans, setSupplExtraEans] = useState<string[]>([]);
   const [showExtraEan, setShowExtraEan] = useState(false);
-  const [supplCode, setSupplCode] = useState('');
+  const [supplCode,  setSupplCode]  = useState('');
   const [supplPrice, setSupplPrice] = useState('');
-  const [priceType, setPriceType] = useState('inkoop');
+
+  // Sheet selections (default to primary sheet after file load)
+  const [exactEanSheet,   setExactEanSheet]   = useState('');
+  const [exactCodeSheet,  setExactCodeSheet]  = useState('');
+  const [exactPriceSheet, setExactPriceSheet] = useState('');
+  const [supplEanSheet,   setSupplEanSheet]   = useState('');
+  const [supplCodeSheet,  setSupplCodeSheet]  = useState('');
+  const [supplPriceSheet, setSupplPriceSheet] = useState('');
+
+  const [priceType,  setPriceType]  = useState('inkoop');
   const [activeFrom, setActiveFrom] = useState('');
-  const [activeTo, setActiveTo] = useState('');
+  const [activeTo,   setActiveTo]   = useState('');
   const [exactColBanner, setExactColBanner] = useState<BannerInfo | null>(null);
   const [supplColBanner, setSupplColBanner] = useState<BannerInfo | null>(null);
 
-  const [results, setResults] = useState<MatchResults | null>(null);
+  const [results,        setResults]        = useState<MatchResults | null>(null);
   const [dupeSelections, setDupeSelections] = useState<Record<string, number>>({});
 
-  const autoDetRef = useRef<AutoDetected>({});
-  const allOccurrencesRef = useRef<Record<string, DupeOccurrence[]>>({});
-  const supplByEanRef = useRef<Record<string, unknown>>({});
-  const supplByCodeRef = useRef<Record<string, unknown>>({});
-  const matchArgsRef = useRef<MatchArgs | null>(null);
+  const autoDetRef          = useRef<AutoDetected>({});
+  const allOccurrencesRef   = useRef<Record<string, DupeOccurrence[]>>({});
+  const supplByEanRef       = useRef<Record<string, unknown>>({});
+  const supplByCodeRef      = useRef<Record<string, unknown>>({});
+  const matchArgsRef        = useRef<MatchArgs | null>(null);
+  const matchSheetArgsRef   = useRef<{ eEanSheet: string; eCodeSheet: string; ePriceSheet: string } | null>(null);
+
+  const exactSheetsRef = useRef<SheetCache>({});
+  const supplSheetsRef = useRef<SheetCache>({});
+
+  // ── Sheet helpers ────────────────────────────────────────
+
+  function getOrParse(
+    workbook: ParsedFile['workbook'],
+    sheetName: string,
+    cache: SheetCache,
+    primaryData: Record<string, unknown>[],
+    primaryCols: string[],
+    primarySheet: string,
+  ): { cols: string[]; data: Record<string, unknown>[] } {
+    if (!sheetName || sheetName === primarySheet) return { cols: primaryCols, data: primaryData };
+    if (cache[sheetName]) return cache[sheetName];
+    const ws = workbook.Sheets[sheetName];
+    if (!ws) return { cols: [], data: [] };
+    const rows = sheetTo2D(ws);
+    const hIdx = detectHeaderRow(rows);
+    const parsed = parseFromHeaderRow(rows, hIdx);
+    cache[sheetName] = parsed;
+    return parsed;
+  }
+
+  function getExactSheet(sheetName: string) {
+    return getOrParse(
+      exactFile!.workbook, sheetName, exactSheetsRef.current,
+      exactFile!.data, exactFile!.cols, exactFile!.workbook.SheetNames[0],
+    );
+  }
+
+  function getSupplSheet(sheetName: string) {
+    return getOrParse(
+      supplFile!.workbook, sheetName, supplSheetsRef.current,
+      supplFile!.data, supplFile!.cols, supplFile!.workbook.SheetNames[0],
+    );
+  }
 
   // ── Navigation ──────────────────────────────────────────
 
   function enterStep2() {
+    const pe = exactFile!.workbook.SheetNames[0];
+    const ps = supplFile!.workbook.SheetNames[0];
+
+    exactSheetsRef.current = {};
+    supplSheetsRef.current = {};
+
     const { cols: eCols, data: eData } = exactFile!;
     const { cols: sCols, data: sData } = supplFile!;
 
@@ -68,6 +127,13 @@ export default function PriceUpdater() {
     setSupplPrice(sPrice || sCols[0] || '');
     setSupplExtraEans([]);
     setShowExtraEan(false);
+
+    setExactEanSheet(pe);
+    setExactCodeSheet(pe);
+    setExactPriceSheet(pe);
+    setSupplEanSheet(ps);
+    setSupplCodeSheet(ps);
+    setSupplPriceSheet(ps);
 
     const eOk = !!(eEan && ePrice);
     setExactColBanner({
@@ -98,24 +164,35 @@ export default function PriceUpdater() {
       return;
     }
 
-    const sEanCols = [supplEan, ...supplExtraEans.filter(c => c !== supplEan)];
+    const supplEanData   = getSupplSheet(supplEanSheet).data;
+    const supplCodeData  = supplCode ? getSupplSheet(supplCodeSheet).data : [];
+    const supplPriceData = getSupplSheet(supplPriceSheet).data;
+    const rowCount = supplFile!.data.length;
 
     const newAllOccurrences: Record<string, DupeOccurrence[]> = {};
     const newSupplByCode: Record<string, unknown> = {};
 
-    supplFile!.data.forEach(row => {
-      const code = supplCode ? String(row[supplCode] ?? '').trim() : '';
+    for (let rowIdx = 0; rowIdx < rowCount; rowIdx++) {
+      const code = supplCode ? String(supplCodeData[rowIdx]?.[supplCode] ?? '').trim() : '';
       const rowEans: Record<string, boolean> = {};
-      sEanCols.forEach(col => {
-        const e = normalizeEan(row[col] ?? '');
-        if (e) rowEans[e] = true;
+
+      const e = normalizeEan(supplEanData[rowIdx]?.[supplEan] ?? '');
+      if (e) rowEans[e] = true;
+
+      supplExtraEans.forEach(col => {
+        const e2 = normalizeEan(supplEanData[rowIdx]?.[col] ?? '');
+        if (e2) rowEans[e2] = true;
       });
+
+      const priceVal = supplPriceData[rowIdx]?.[supplPrice];
+      const baseRow = supplEanData[rowIdx] ?? {};
+
       Object.keys(rowEans).forEach(ean => {
         if (!newAllOccurrences[ean]) newAllOccurrences[ean] = [];
-        newAllOccurrences[ean].push({ price: row[supplPrice], row });
+        newAllOccurrences[ean].push({ price: priceVal, row: baseRow });
       });
-      if (code && !newSupplByCode[code]) newSupplByCode[code] = row[supplPrice];
-    });
+      if (code && !newSupplByCode[code]) newSupplByCode[code] = priceVal;
+    }
 
     const newSupplByEan: Record<string, unknown> = {};
     const newDupeSelections: Record<string, number> = {};
@@ -125,13 +202,13 @@ export default function PriceUpdater() {
       newSupplByEan[ean] = occs[0].price;
     });
 
-    allOccurrencesRef.current = newAllOccurrences;
-    supplByEanRef.current = newSupplByEan;
-    supplByCodeRef.current = newSupplByCode;
-    matchArgsRef.current = { eEanCol: exactEan, eCodeCol: exactCode, ePriceCol: exactPrice, fromValue: activeFrom, toValue: activeTo };
+    allOccurrencesRef.current  = newAllOccurrences;
+    supplByEanRef.current      = newSupplByEan;
+    supplByCodeRef.current     = newSupplByCode;
+    matchArgsRef.current       = { eEanCol: exactEan, eCodeCol: exactCode, ePriceCol: exactPrice, fromValue: activeFrom, toValue: activeTo };
+    matchSheetArgsRef.current  = { eEanSheet: exactEanSheet, eCodeSheet: exactCodeSheet, ePriceSheet: exactPriceSheet };
 
     setDupeSelections(newDupeSelections);
-
     setResults(computeMatching(newSupplByEan, newSupplByCode));
     setStep(3);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -142,7 +219,12 @@ export default function PriceUpdater() {
     supplByCode: Record<string, unknown>,
   ): MatchResults {
     const { eEanCol, eCodeCol, ePriceCol, fromValue, toValue } = matchArgsRef.current!;
+    const { eEanSheet, eCodeSheet, ePriceSheet } = matchSheetArgsRef.current!;
     const allOccurrences = allOccurrencesRef.current;
+
+    const exactEanData   = getExactSheet(eEanSheet).data;
+    const exactCodeData  = eCodeCol ? getExactSheet(eCodeSheet).data : [];
+    const exactPriceData = getExactSheet(ePriceSheet).data;
 
     const dupeEanSet = new Set(
       Object.entries(allOccurrences).filter(([, o]) => o.length > 1).map(([ean]) => ean)
@@ -154,10 +236,11 @@ export default function PriceUpdater() {
     const reportRows: ReportRow[] = [];
     const unmatched: MatchResults['unmatched'] = [];
 
-    const resultData = exactFile!.data.map(row => {
-      const copy: Record<string, unknown> = { ...row };
-      const ean = normalizeEan(row[eEanCol] ?? '');
-      const code = eCodeCol ? String(row[eCodeCol] ?? '').trim() : '';
+    const resultData = exactFile!.data.map((primaryRow, rowIdx) => {
+      const copy: Record<string, unknown> = { ...primaryRow };
+      const ean  = normalizeEan(exactEanData[rowIdx]?.[eEanCol] ?? '');
+      const code = eCodeCol ? String(exactCodeData[rowIdx]?.[eCodeCol] ?? '').trim() : '';
+      const oldPrice = exactPriceData[rowIdx]?.[ePriceCol];
       let newPrice: unknown;
       let matchedBy = '';
 
@@ -175,10 +258,10 @@ export default function PriceUpdater() {
         updated++;
         if (fromValue) copy['Active from'] = fmtDate(fromValue);
         if (toValue) copy['Active to'] = fmtDate(toValue);
-        reportRows.push({ EAN: ean, ArticleCode: code, OldPrice: row[ePriceCol], NewPrice: newPrice, ActiveFrom: fromValue || '', ActiveTo: toValue || '', Status: 'Updated', MatchedBy: matchedBy });
+        reportRows.push({ EAN: ean, ArticleCode: code, OldPrice: oldPrice, NewPrice: newPrice, ActiveFrom: fromValue || '', ActiveTo: toValue || '', Status: 'Updated', MatchedBy: matchedBy });
       } else {
-        unmatched.push({ ean, code, oldPrice: row[ePriceCol], exactRow: row });
-        reportRows.push({ EAN: ean, ArticleCode: code, OldPrice: row[ePriceCol], NewPrice: '', ActiveFrom: '', ActiveTo: '', Status: 'Not matched', MatchedBy: '' });
+        unmatched.push({ ean, code, oldPrice, exactRow: primaryRow });
+        reportRows.push({ EAN: ean, ArticleCode: code, OldPrice: oldPrice, NewPrice: '', ActiveFrom: '', ActiveTo: '', Status: 'Not matched', MatchedBy: '' });
       }
       return copy;
     });
@@ -281,6 +364,8 @@ export default function PriceUpdater() {
   // ── Render ──────────────────────────────────────────────
 
   const ad = autoDetRef.current;
+  const exactSheetNames = exactFile?.workbook.SheetNames ?? [];
+  const supplSheetNames = supplFile?.workbook.SheetNames ?? [];
 
   return (
     <div className="container">
@@ -325,36 +410,56 @@ export default function PriceUpdater() {
           <div className="card">
             <div className="card-title">Exact Online file — column mapping</div>
             {exactColBanner && <Banner {...exactColBanner} />}
+            {exactSheetNames.length > 1 && (
+              <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, marginBottom: 0 }}>
+                Multiple sheets detected — use the small sheet selector above each dropdown to pick from a different sheet.
+              </p>
+            )}
             <div className="grid-3" style={{ marginTop: '1rem' }}>
               <div>
                 <label className="field-label">EAN / barcode column *</label>
+                <SheetPicker
+                  sheetNames={exactSheetNames}
+                  value={exactEanSheet}
+                  onChange={s => { setExactEanSheet(s); setExactEan(getExactSheet(s).cols[0] ?? ''); }}
+                />
                 <select
                   value={exactEan}
                   className={exactEan && exactEan === ad.eEan ? 'auto-detected' : exactEan ? '' : 'needs-review'}
                   onChange={(e) => setExactEan(e.target.value)}
                 >
-                  {exactFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
+                  {getExactSheet(exactEanSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
                 <label className="field-label">Article code (optional fallback)</label>
+                <SheetPicker
+                  sheetNames={exactSheetNames}
+                  value={exactCodeSheet}
+                  onChange={s => { setExactCodeSheet(s); setExactCode(''); }}
+                />
                 <select
                   value={exactCode}
                   className={exactCode && exactCode === ad.eCode ? 'auto-detected' : ''}
                   onChange={(e) => setExactCode(e.target.value)}
                 >
                   <option value="">— none —</option>
-                  {exactFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
+                  {getExactSheet(exactCodeSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
                 <label className="field-label">Price column to update *</label>
+                <SheetPicker
+                  sheetNames={exactSheetNames}
+                  value={exactPriceSheet}
+                  onChange={s => { setExactPriceSheet(s); setExactPrice(getExactSheet(s).cols[0] ?? ''); }}
+                />
                 <select
                   value={exactPrice}
                   className={exactPrice && exactPrice === ad.ePrice ? 'auto-detected' : exactPrice ? '' : 'needs-review'}
                   onChange={(e) => setExactPrice(e.target.value)}
                 >
-                  {exactFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
+                  {getExactSheet(exactPriceSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
             </div>
@@ -380,15 +485,25 @@ export default function PriceUpdater() {
           <div className="card">
             <div className="card-title">Supplier file — column mapping</div>
             {supplColBanner && <Banner {...supplColBanner} />}
+            {supplSheetNames.length > 1 && (
+              <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, marginBottom: 0 }}>
+                Multiple sheets detected — use the small sheet selector above each dropdown to pick from a different sheet.
+              </p>
+            )}
             <div className="grid-3" style={{ marginTop: '1rem' }}>
               <div>
                 <label className="field-label">EAN / barcode column *</label>
+                <SheetPicker
+                  sheetNames={supplSheetNames}
+                  value={supplEanSheet}
+                  onChange={s => { setSupplEanSheet(s); setSupplEan(getSupplSheet(s).cols[0] ?? ''); setSupplExtraEans([]); }}
+                />
                 <select
                   value={supplEan}
                   className={supplEan && supplEan === ad.sEan ? 'auto-detected' : supplEan ? '' : 'needs-review'}
                   onChange={(e) => setSupplEan(e.target.value)}
                 >
-                  {supplFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
+                  {getSupplSheet(supplEanSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <div style={{ marginTop: 6 }}>
                   <button
@@ -402,10 +517,10 @@ export default function PriceUpdater() {
                 {showExtraEan && (
                   <div style={{ marginTop: 6 }}>
                     <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                      Additional EAN columns to also search (optional)
+                      Additional EAN columns to also search (from same sheet)
                     </div>
                     <div className="ean-check-list">
-                      {supplFile.cols.map(col => (
+                      {getSupplSheet(supplEanSheet).cols.map(col => (
                         <label key={col}>
                           <input
                             type="checkbox"
@@ -425,23 +540,33 @@ export default function PriceUpdater() {
               </div>
               <div>
                 <label className="field-label">Article code (optional fallback)</label>
+                <SheetPicker
+                  sheetNames={supplSheetNames}
+                  value={supplCodeSheet}
+                  onChange={s => { setSupplCodeSheet(s); setSupplCode(''); }}
+                />
                 <select
                   value={supplCode}
                   className={supplCode && supplCode === ad.sCode ? 'auto-detected' : ''}
                   onChange={(e) => setSupplCode(e.target.value)}
                 >
                   <option value="">— none —</option>
-                  {supplFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
+                  {getSupplSheet(supplCodeSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
                 <label className="field-label">New price column *</label>
+                <SheetPicker
+                  sheetNames={supplSheetNames}
+                  value={supplPriceSheet}
+                  onChange={s => { setSupplPriceSheet(s); setSupplPrice(getSupplSheet(s).cols[0] ?? ''); }}
+                />
                 <select
                   value={supplPrice}
                   className={supplPrice && supplPrice === ad.sPrice ? 'auto-detected' : supplPrice ? '' : 'needs-review'}
                   onChange={(e) => setSupplPrice(e.target.value)}
                 >
-                  {supplFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
+                  {getSupplSheet(supplPriceSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
             </div>

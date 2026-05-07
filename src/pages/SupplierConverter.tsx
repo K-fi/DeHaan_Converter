@@ -3,10 +3,12 @@ import Stepper from '../components/Stepper';
 import FileUploadCard from '../components/FileUploadCard';
 import PreviewTable from '../components/PreviewTable';
 import Banner from '../components/Banner';
+import SheetPicker from '../components/SheetPicker';
 import { findBestCol, EAN_HINTS, CODE_HINTS } from '../utils/columns';
 import { buildOutputRows, OUTPUT_COLS } from '../utils/converter';
-import { downloadXLSX } from '../utils/xlsx';
-import type { ParsedFile, BannerInfo } from '../types';
+import { sheetTo2D, downloadXLSX } from '../utils/xlsx';
+import { detectHeaderRow, parseFromHeaderRow } from '../utils/headers';
+import type { ParsedFile, BannerInfo, ColRef } from '../types';
 
 const PRODUCTSOORT_HINTS  = ['productsoort', 'soort', 'type', 'categorie', 'category'];
 const KOSTPRIJS_HINTS     = ['kostprijs', 'inkoopprijs', 'cost', 'inkoop', 'purchase'];
@@ -37,7 +39,7 @@ const INPUT_STYLE: React.CSSProperties = {
   fontFamily: 'inherit',
 };
 
-// ── NL → EN translations for Step 2 labels ──────────────
+// ── NL → EN translations ─────────────────────────────────
 
 const EN: Record<string, string> = {
   'Hoofdleverancier':                    'Main supplier',
@@ -55,11 +57,9 @@ const EN: Record<string, string> = {
   'Artikelcode':                         'Article code',
   'Omschrijving':                        'Description',
   'Productnaam':                         'Product name',
-  // hints
   'productsoort_hint':                   'Drives Article group and Unit derivation.',
   'bestelnummer_hint':                   'Also copied to Supplier article code search field.',
   'omschrijving_hint':                   'Select one or more columns. Values are joined and truncated to 60 characters. Extra description gets the full untruncated value.',
-  // fixed-field labels
   'Actief vanaf':                        'Active from',
   'Inkoop':                              'Purchase',
   'Ordergestuurd':                       'Order driven',
@@ -75,21 +75,39 @@ const EN: Record<string, string> = {
   'Copy of Bestelnummer leverancier':    'Copy of Supplier order number',
 };
 
-// ── Multi-column combiner ────────────────────────────────
+// ── Multi-column combiner with sheet support ─────────────
 
 interface MultiColCombinerProps {
-  cols: string[];
-  selected: string[];
-  onChange: (v: string[]) => void;
+  sheetNames: string[];
+  primarySheet: string;
+  getSheetCols: (sheet: string) => string[];
+  selected: ColRef[];
+  onChange: (v: ColRef[]) => void;
   label: string;
   hint: string;
   required?: boolean;
 }
 
-function MultiColCombiner({ cols, selected, onChange, label, hint, required }: MultiColCombinerProps) {
-  function toggle(col: string) {
-    onChange(selected.includes(col) ? selected.filter(c => c !== col) : [...selected, col]);
+function MultiColCombiner({
+  sheetNames, primarySheet, getSheetCols,
+  selected, onChange, label, hint, required,
+}: MultiColCombinerProps) {
+  const [activeSheet, setActiveSheet] = useState(primarySheet);
+  const cols = getSheetCols(activeSheet);
+  const isMultiSheet = sheetNames.length > 1;
+
+  function isChecked(col: string) {
+    return selected.some(r => r.sheet === activeSheet && r.col === col);
   }
+
+  function toggle(col: string) {
+    if (isChecked(col)) {
+      onChange(selected.filter(r => !(r.sheet === activeSheet && r.col === col)));
+    } else {
+      onChange([...selected, { sheet: activeSheet, col }]);
+    }
+  }
+
   function move(idx: number, dir: -1 | 1) {
     const next = [...selected];
     [next[idx], next[idx + dir]] = [next[idx + dir], next[idx]];
@@ -100,10 +118,17 @@ function MultiColCombiner({ cols, selected, onChange, label, hint, required }: M
     <div>
       <label className="field-label">{label}{required && ' *'}</label>
       <p className="field-hint" style={{ marginBottom: 6 }}>{hint}</p>
+      {isMultiSheet && (
+        <SheetPicker
+          sheetNames={sheetNames}
+          value={activeSheet}
+          onChange={s => setActiveSheet(s)}
+        />
+      )}
       <div className="ean-check-list">
         {cols.map(col => (
-          <label key={col}>
-            <input type="checkbox" checked={selected.includes(col)} onChange={() => toggle(col)} />
+          <label key={`${activeSheet}:${col}`}>
+            <input type="checkbox" checked={isChecked(col)} onChange={() => toggle(col)} />
             <span>{col}</span>
           </label>
         ))}
@@ -111,10 +136,10 @@ function MultiColCombiner({ cols, selected, onChange, label, hint, required }: M
       {selected.length > 0 && (
         <div style={{ marginTop: 8 }}>
           <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>Combine order:</div>
-          {selected.map((col, idx) => (
-            <div key={col} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+          {selected.map((ref, idx) => (
+            <div key={`${ref.sheet}:${ref.col}:${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
               <span style={{ flex: 1, fontSize: 11, background: 'var(--bg-secondary)', borderRadius: 4, padding: '3px 8px', border: '0.5px solid var(--border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {idx + 1}. {col}
+                {idx + 1}. {isMultiSheet ? `[${ref.sheet}] ` : ''}{ref.col}
               </span>
               <button className="btn btn-sm" style={{ padding: '1px 7px' }} onClick={() => move(idx, -1)} disabled={idx === 0}>↑</button>
               <button className="btn btn-sm" style={{ padding: '1px 7px' }} onClick={() => move(idx, 1)} disabled={idx === selected.length - 1}>↓</button>
@@ -129,6 +154,8 @@ function MultiColCombiner({ cols, selected, onChange, label, hint, required }: M
 
 // ── Main component ───────────────────────────────────────
 
+const EMPTY_REF: ColRef = { sheet: '', col: '' };
+
 export default function SupplierConverter() {
   const [step, setStep] = useState(1);
   const [supplFile, setSupplFile] = useState<ParsedFile | null>(null);
@@ -140,41 +167,62 @@ export default function SupplierConverter() {
   const [btwInkoop, setBtwInkoop] = useState('3');
   const [startingCode, setStartingCode] = useState('');
 
-  // Column mappings — required
-  const [barcodeCol, setBarcodeCol] = useState('');
-  const [productsoortCol, setProductsoortCol] = useState('');
-  const [kostprijsCol, setKostprijsCol] = useState('');
-  const [bestelnummerCol, setBestelnummerCol] = useState('');
-  const [verkoopprijsCol, setVerkoopprijsCol] = useState('');
-  const [maatCol, setMaatCol] = useState('');
-  const [kleurCol, setKleurCol] = useState('');
-
-  // Column mappings — optional
-  const [veiligheidsclassificatieCol, setVeiligheidsclassificatieCol] = useState('');
-  const [geslachtCol, setGeslachtCol] = useState('');
-  const [merkCol, setMerkCol] = useState('');
-  const [artikelcodeCol, setArtikelcodeCol] = useState('');
-
-  // Multi-column combiners
-  const [omschrijvingCols, setOmschrijvingCols] = useState<string[]>([]);
-  const [productnaamCols, setProductnaamCols] = useState<string[]>([]);
+  // Column refs — each holds { sheet, col }
+  const [barcodeRef,               setBarcodeRef]               = useState<ColRef>(EMPTY_REF);
+  const [productsoortRef,          setProductsoortRef]          = useState<ColRef>(EMPTY_REF);
+  const [kostprijsRef,             setKostprijsRef]             = useState<ColRef>(EMPTY_REF);
+  const [bestelnummerRef,          setBestelnummerRef]          = useState<ColRef>(EMPTY_REF);
+  const [verkoopprijsRef,          setVerkoopprijsRef]          = useState<ColRef>(EMPTY_REF);
+  const [maatRef,                  setMaatRef]                  = useState<ColRef>(EMPTY_REF);
+  const [kleurRef,                 setKleurRef]                 = useState<ColRef>(EMPTY_REF);
+  const [veiligheidsclassRef,      setVeiligheidsclassRef]      = useState<ColRef>(EMPTY_REF);
+  const [geslachtRef,              setGeslachtRef]              = useState<ColRef>(EMPTY_REF);
+  const [merkRef,                  setMerkRef]                  = useState<ColRef>(EMPTY_REF);
+  const [artikelcodeRef,           setArtikelcodeRef]           = useState<ColRef>(EMPTY_REF);
+  const [omschrijvingRefs,         setOmschrijvingRefs]         = useState<ColRef[]>([]);
+  const [productnaamRefs,          setProductnaamRefs]          = useState<ColRef[]>([]);
 
   // Results
   const [outputData, setOutputData] = useState<Record<string, unknown>[] | null>(null);
 
-  const autoDetRef = useRef<Record<string, string | null>>({});
+  const autoDetRef  = useRef<Record<string, string | null>>({});
+  const parsedSheetsRef = useRef<Record<string, { cols: string[]; data: Record<string, unknown>[] }>>({});
 
-  // ── Translation helper ───────────────────────────────────
+  // ── Translation helper ──────────────────────────────────
 
   function t(dutch: string) {
     return showEnglish ? (EN[dutch] ?? dutch) : dutch;
   }
 
+  // ── Sheet helpers ────────────────────────────────────────
+
+  const sheetNames = supplFile?.workbook.SheetNames ?? [];
+  const primarySheet = sheetNames[0] ?? '';
+
+  function getSheetInfo(sheetName: string): { cols: string[]; data: Record<string, unknown>[] } {
+    if (!supplFile) return { cols: [], data: [] };
+    if (!sheetName || sheetName === primarySheet) return { cols: supplFile.cols, data: supplFile.data };
+    if (parsedSheetsRef.current[sheetName]) return parsedSheetsRef.current[sheetName];
+    const ws = supplFile.workbook.Sheets[sheetName];
+    if (!ws) return { cols: [], data: [] };
+    const rows = sheetTo2D(ws);
+    const hIdx = detectHeaderRow(rows);
+    const parsed = parseFromHeaderRow(rows, hIdx);
+    parsedSheetsRef.current[sheetName] = parsed;
+    return parsed;
+  }
+
+  function getSheetCols(sheetName: string): string[] {
+    return getSheetInfo(sheetName).cols;
+  }
+
   // ── Navigation ──────────────────────────────────────────
 
   function enterStep2() {
-    const { cols, data } = supplFile!;
+    const ps = supplFile!.workbook.SheetNames[0];
+    parsedSheetsRef.current = {};
 
+    const { cols, data } = supplFile!;
     const det: Record<string, string | null> = {
       barcode:      findBestCol(cols, data, EAN_HINTS, null),
       productsoort: findBestCol(cols, data, PRODUCTSOORT_HINTS, null),
@@ -192,29 +240,30 @@ export default function SupplierConverter() {
     };
     autoDetRef.current = det;
 
-    setBarcodeCol(det.barcode || '');
-    setProductsoortCol(det.productsoort || '');
-    setKostprijsCol(det.kostprijs || '');
-    setBestelnummerCol(det.bestelnummer || '');
-    setVerkoopprijsCol(det.verkoopprijs || '');
-    setMaatCol(det.maat || '');
-    setKleurCol(det.kleur || '');
-    setVeiligheidsclassificatieCol(det.veiligheid || '');
-    setGeslachtCol(det.geslacht || '');
-    setMerkCol(det.merk || '');
-    setArtikelcodeCol(det.artikelcode || '');
-    setOmschrijvingCols(det.omschr ? [det.omschr] : []);
-    setProductnaamCols(det.productnaam ? [det.productnaam] : []);
+    const mk = (key: string): ColRef => ({ sheet: ps, col: det[key] || '' });
 
-    const requiredDet = [det.barcode, det.productsoort, det.kostprijs, det.bestelnummer, det.verkoopprijs, det.maat, det.kleur];
-    const detected = requiredDet.filter(Boolean).length;
-    const total = requiredDet.length;
+    setBarcodeRef(mk('barcode'));
+    setProductsoortRef(mk('productsoort'));
+    setKostprijsRef(mk('kostprijs'));
+    setBestelnummerRef(mk('bestelnummer'));
+    setVerkoopprijsRef(mk('verkoopprijs'));
+    setMaatRef(mk('maat'));
+    setKleurRef(mk('kleur'));
+    setVeiligheidsclassRef(mk('veiligheid'));
+    setGeslachtRef(mk('geslacht'));
+    setMerkRef(mk('merk'));
+    setArtikelcodeRef(mk('artikelcode'));
+    setOmschrijvingRefs(det.omschr ? [{ sheet: ps, col: det.omschr }] : []);
+    setProductnaamRefs(det.productnaam ? [{ sheet: ps, col: det.productnaam }] : []);
+
+    const required = [det.barcode, det.productsoort, det.kostprijs, det.bestelnummer, det.verkoopprijs, det.maat, det.kleur];
+    const detected = required.filter(Boolean).length;
     setBanner({
-      type: detected === total ? 'success' : 'warning',
-      icon: detected === total ? '✓' : '⚠',
-      message: detected === total
-        ? `Auto-detected all ${total} required columns. Please verify below.`
-        : `Auto-detected ${detected} of ${total} required columns — highlighted fields need manual selection.`,
+      type: detected === required.length ? 'success' : 'warning',
+      icon: detected === required.length ? '✓' : '⚠',
+      message: detected === required.length
+        ? `Auto-detected all ${required.length} required columns. Please verify below.`
+        : `Auto-detected ${detected} of ${required.length} required columns — highlighted fields need manual selection.`,
     });
 
     setStep(2);
@@ -225,31 +274,47 @@ export default function SupplierConverter() {
     const code = parseInt(startingCode, 10);
     if (!hoofdleverancier.trim()) { alert('Please enter the supplier name (Hoofdleverancier).'); return; }
     if (isNaN(code) || code < 0) { alert('Please enter a valid last used code number.'); return; }
-    if (!barcodeCol) { alert('Please select the Barcode column.'); return; }
-    if (!productsoortCol) { alert('Please select the Productsoort column.'); return; }
-    if (!maatCol) { alert('Please select the Maat column.'); return; }
-    if (!kleurCol) { alert('Please select the Kleur column.'); return; }
-    if (omschrijvingCols.length === 0) { alert('Please select at least one column for Omschrijving.'); return; }
-    if (productnaamCols.length === 0) { alert('Please select at least one column for Productnaam.'); return; }
+    if (!barcodeRef.col) { alert('Please select the Barcode column.'); return; }
+    if (!productsoortRef.col) { alert('Please select the Productsoort column.'); return; }
+    if (!maatRef.col) { alert('Please select the Maat column.'); return; }
+    if (!kleurRef.col) { alert('Please select the Kleur column.'); return; }
+    if (omschrijvingRefs.length === 0) { alert('Please select at least one column for Omschrijving.'); return; }
+    if (productnaamRefs.length === 0) { alert('Please select at least one column for Productnaam.'); return; }
+
+    // Collect all referenced sheets and build sheetsData
+    const allRefs: ColRef[] = [
+      barcodeRef, productsoortRef, kostprijsRef, bestelnummerRef,
+      verkoopprijsRef, veiligheidsclassRef, geslachtRef,
+      maatRef, merkRef, kleurRef, artikelcodeRef,
+      ...omschrijvingRefs, ...productnaamRefs,
+    ];
+    const usedSheets = [...new Set(allRefs.map(r => r.sheet || primarySheet))];
+    const sheetsData: Record<string, Record<string, unknown>[]> = {};
+    usedSheets.forEach(sn => { sheetsData[sn] = getSheetInfo(sn).data; });
+
+    const rowCount = sheetsData[primarySheet]?.length ?? supplFile!.data.length;
+
+    const resolve = (ref: ColRef): ColRef => ({ sheet: ref.sheet || primarySheet, col: ref.col });
 
     setOutputData(buildOutputRows({
-      supplFile: supplFile!,
+      sheetsData,
+      rowCount,
       startingCode: code,
       hoofdleverancier: hoofdleverancier.trim(),
       btwInkoop,
-      barcodeCol,
-      productsoortCol,
-      kostprijsCol,
-      bestelnummerCol,
-      verkoopprijsCol,
-      veiligheidsclassificatieCol,
-      geslachtCol,
-      maatCol,
-      merkCol,
-      kleurCol,
-      artikelcodeCol,
-      omschrijvingCols,
-      productnaamCols,
+      barcodeRef:               resolve(barcodeRef),
+      productsoortRef:          resolve(productsoortRef),
+      kostprijsRef:             resolve(kostprijsRef),
+      bestelnummerRef:          resolve(bestelnummerRef),
+      verkoopprijsRef:          resolve(verkoopprijsRef),
+      veiligheidsclassificatieRef: resolve(veiligheidsclassRef),
+      geslachtRef:              resolve(geslachtRef),
+      maatRef:                  resolve(maatRef),
+      merkRef:                  resolve(merkRef),
+      kleurRef:                 resolve(kleurRef),
+      artikelcodeRef:           resolve(artikelcodeRef),
+      omschrijvingRefs:         omschrijvingRefs.map(resolve),
+      productnaamRefs:          productnaamRefs.map(resolve),
     }));
 
     setStep(3);
@@ -261,13 +326,49 @@ export default function SupplierConverter() {
     downloadXLSX(outputData!, [...OUTPUT_COLS], name, 'Exact Import');
   }
 
-  // ── Helpers ──────────────────────────────────────────────
+  // ── Field rendering helpers ──────────────────────────────
 
   const ad = autoDetRef.current;
 
-  function selClass(key: string, val: string) {
-    if (!val) return 'needs-review';
-    return val === ad[key] ? 'auto-detected' : '';
+  function selClass(key: string, ref: ColRef): string {
+    if (!ref.col) return 'needs-review';
+    return ref.col === ad[key] ? 'auto-detected' : '';
+  }
+
+  function renderField(
+    label: string,
+    ref: ColRef,
+    setRef: (r: ColRef) => void,
+    opts: {
+      required?: boolean;
+      optional?: boolean;
+      defaultLabel?: string;
+      hint?: string;
+      autoKey?: string;
+    } = {},
+  ) {
+    const { required, optional, defaultLabel, hint, autoKey } = opts;
+    const cols = getSheetCols(ref.sheet || primarySheet);
+    const cls = autoKey ? selClass(autoKey, ref) : (required && !ref.col ? 'needs-review' : '');
+    return (
+      <div>
+        <label className="field-label">{label}{required && ' *'}</label>
+        <SheetPicker
+          sheetNames={sheetNames}
+          value={ref.sheet || primarySheet}
+          onChange={s => setRef({ sheet: s, col: '' })}
+        />
+        <select
+          value={ref.col}
+          className={cls}
+          onChange={e => setRef({ ...ref, sheet: ref.sheet || primarySheet, col: e.target.value })}
+        >
+          <option value="">{defaultLabel ?? (optional ? '— none —' : '— select column —')}</option>
+          {cols.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        {hint && <p className="field-hint">{hint}</p>}
+      </div>
+    );
   }
 
   const activiefVanaf = (() => {
@@ -380,107 +481,34 @@ export default function SupplierConverter() {
           {/* Column mappings */}
           <div className="card">
             <div className="card-title">Column mappings</div>
+            {sheetNames.length > 1 && (
+              <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+                This file has multiple sheets. Use the small sheet selector above each dropdown to pick columns from different sheets.
+              </p>
+            )}
             <div className="grid-3">
-              <div>
-                <label className="field-label">{t('Barcode')} *</label>
-                <select value={barcodeCol} className={selClass('barcode', barcodeCol)} onChange={e => setBarcodeCol(e.target.value)}>
-                  <option value="">— select column —</option>
-                  {supplFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="field-label">{t('Productsoort')} *</label>
-                <select value={productsoortCol} className={selClass('productsoort', productsoortCol)} onChange={e => setProductsoortCol(e.target.value)}>
-                  <option value="">— select column —</option>
-                  {supplFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <p className="field-hint">{t('productsoort_hint') || 'Drives Artikelgroep and Eenheid derivation.'}</p>
-              </div>
-              <div>
-                <label className="field-label">{t('Kostprijs')} *</label>
-                <select value={kostprijsCol} className={selClass('kostprijs', kostprijsCol)} onChange={e => setKostprijsCol(e.target.value)}>
-                  <option value="">— select column —</option>
-                  {supplFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="field-label">{t('Bestelnummer leverancier')} *</label>
-                <select value={bestelnummerCol} className={selClass('bestelnummer', bestelnummerCol)} onChange={e => setBestelnummerCol(e.target.value)}>
-                  <option value="">— select column —</option>
-                  {supplFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <p className="field-hint">{t('bestelnummer_hint') || 'Also copied to Artikelcode Hoofdleverancier zoekveld.'}</p>
-              </div>
-              <div>
-                <label className="field-label">{t('Verkoopprijs')} *</label>
-                <select value={verkoopprijsCol} className={selClass('verkoopprijs', verkoopprijsCol)} onChange={e => setVerkoopprijsCol(e.target.value)}>
-                  <option value="">— select column —</option>
-                  {supplFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="field-label">{t('Maat')} *</label>
-                <select value={maatCol} className={selClass('maat', maatCol)} onChange={e => setMaatCol(e.target.value)}>
-                  <option value="">— select column —</option>
-                  {supplFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="field-label">{t('Kleur')} *</label>
-                <select value={kleurCol} className={selClass('kleur', kleurCol)} onChange={e => setKleurCol(e.target.value)}>
-                  <option value="">— select column —</option>
-                  {supplFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="field-label">{t('Veiligheidsclassificatie')}</label>
-                <select
-                  value={veiligheidsclassificatieCol}
-                  className={veiligheidsclassificatieCol && veiligheidsclassificatieCol === ad['veiligheid'] ? 'auto-detected' : ''}
-                  onChange={e => setVeiligheidsclassificatieCol(e.target.value)}
-                >
-                  <option value="">— none —</option>
-                  {supplFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
+              {renderField(t('Barcode'), barcodeRef, setBarcodeRef, { required: true, autoKey: 'barcode' })}
+              {renderField(t('Productsoort'), productsoortRef, setProductsoortRef, {
+                required: true, autoKey: 'productsoort',
+                hint: t('productsoort_hint') || 'Drives Artikelgroep and Eenheid derivation.',
+              })}
+              {renderField(t('Kostprijs'), kostprijsRef, setKostprijsRef, { required: true, autoKey: 'kostprijs' })}
+              {renderField(t('Bestelnummer leverancier'), bestelnummerRef, setBestelnummerRef, {
+                required: true, autoKey: 'bestelnummer',
+                hint: t('bestelnummer_hint') || 'Also copied to Artikelcode Hoofdleverancier zoekveld.',
+              })}
+              {renderField(t('Verkoopprijs'), verkoopprijsRef, setVerkoopprijsRef, { required: true, autoKey: 'verkoopprijs' })}
+              {renderField(t('Maat'), maatRef, setMaatRef, { required: true, autoKey: 'maat' })}
+              {renderField(t('Kleur'), kleurRef, setKleurRef, { required: true, autoKey: 'kleur' })}
+              {renderField(t('Veiligheidsclassificatie'), veiligheidsclassRef, setVeiligheidsclassRef, { optional: true, autoKey: 'veiligheid' })}
             </div>
 
             <hr className="divider" />
             <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>Optional columns</div>
             <div className="grid-3">
-              <div>
-                <label className="field-label">{t('Geslacht')}</label>
-                <select
-                  value={geslachtCol}
-                  className={geslachtCol && geslachtCol === ad['geslacht'] ? 'auto-detected' : ''}
-                  onChange={e => setGeslachtCol(e.target.value)}
-                >
-                  <option value="">— default to Unisex —</option>
-                  {supplFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="field-label">{t('Merk')}</label>
-                <select
-                  value={merkCol}
-                  className={merkCol && merkCol === ad['merk'] ? 'auto-detected' : ''}
-                  onChange={e => setMerkCol(e.target.value)}
-                >
-                  <option value="">— none —</option>
-                  {supplFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="field-label">{t('Artikelcode')}</label>
-                <select
-                  value={artikelcodeCol}
-                  className={artikelcodeCol && artikelcodeCol === ad['artikelcode'] ? 'auto-detected' : ''}
-                  onChange={e => setArtikelcodeCol(e.target.value)}
-                >
-                  <option value="">— none —</option>
-                  {supplFile.cols.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
+              {renderField(t('Geslacht'), geslachtRef, setGeslachtRef, { optional: true, defaultLabel: '— default to Unisex —', autoKey: 'geslacht' })}
+              {renderField(t('Merk'), merkRef, setMerkRef, { optional: true, autoKey: 'merk' })}
+              {renderField(t('Artikelcode'), artikelcodeRef, setArtikelcodeRef, { optional: true, autoKey: 'artikelcode' })}
             </div>
           </div>
 
@@ -489,9 +517,11 @@ export default function SupplierConverter() {
             <div className="card-title">Description columns</div>
             <div className="grid-2" style={{ alignItems: 'flex-start' }}>
               <MultiColCombiner
-                cols={supplFile.cols}
-                selected={omschrijvingCols}
-                onChange={setOmschrijvingCols}
+                sheetNames={sheetNames}
+                primarySheet={primarySheet}
+                getSheetCols={getSheetCols}
+                selected={omschrijvingRefs}
+                onChange={setOmschrijvingRefs}
                 label={t('Omschrijving')}
                 hint={
                   showEnglish
@@ -501,9 +531,11 @@ export default function SupplierConverter() {
                 required
               />
               <MultiColCombiner
-                cols={supplFile.cols}
-                selected={productnaamCols}
-                onChange={setProductnaamCols}
+                sheetNames={sheetNames}
+                primarySheet={primarySheet}
+                getSheetCols={getSheetCols}
+                selected={productnaamRefs}
+                onChange={setProductnaamRefs}
                 label={t('Productnaam')}
                 hint="Select columns to combine — typically: brand + product type + article type + safety classification code."
                 required

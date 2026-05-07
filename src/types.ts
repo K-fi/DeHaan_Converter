@@ -1,5 +1,10 @@
 import type { WorkSheet, WorkBook } from 'xlsx';
 
+export interface ColRef {
+  sheet: string;
+  col: string;
+}
+
 export interface ParsedFile {
   data: Record<string, unknown>[];
   cols: string[];
