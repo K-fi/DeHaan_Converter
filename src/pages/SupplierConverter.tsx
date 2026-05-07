@@ -408,6 +408,7 @@ export default function SupplierConverter() {
             title="Supplier product file"
             icon="📋"
             onFileLoaded={setSupplFile}
+            initialFile={supplFile}
           />
           <div className="actions">
             <button className="btn btn-primary" disabled={!supplFile} onClick={enterStep2}>
@@ -459,8 +460,8 @@ export default function SupplierConverter() {
                 <label className="field-label">{t('Btw-code: Inkoop')} *</label>
                 <select value={btwInkoop} onChange={e => setBtwInkoop(e.target.value)}>
                   <option value="3">Holland (3)</option>
-                  <option value="10">Europe (10)</option>
-                  <option value="9">Outside Europe (9)</option>
+                  <option value="9">Europe (9)</option>
+                  <option value="10">Outside Europe (10)</option>
                 </select>
               </div>
               <div>

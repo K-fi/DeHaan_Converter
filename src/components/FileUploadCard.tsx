@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { readFileRaw, sheetTo2D } from '../utils/xlsx';
 import { detectHeaderRow, parseFromHeaderRow } from '../utils/headers';
 import PreviewTable from './PreviewTable';
@@ -10,9 +10,10 @@ interface FileUploadCardProps {
   title: string;
   icon: string;
   onFileLoaded: (file: ParsedFile) => void;
+  initialFile?: ParsedFile | null;
 }
 
-export default function FileUploadCard({ title, icon, onFileLoaded }: FileUploadCardProps) {
+export default function FileUploadCard({ title, icon, onFileLoaded, initialFile }: FileUploadCardProps) {
   const [uploadedName, setUploadedName] = useState<string | null>(null);
   const [banner, setBanner] = useState<BannerInfo | null>(null);
   const [sheets, setSheets] = useState<string[]>([]);
@@ -22,6 +23,23 @@ export default function FileUploadCard({ title, icon, onFileLoaded }: FileUpload
   const workbookRef = useRef<WorkBook | null>(null);
   const rawSheetRef = useRef<WorkSheet | null>(null);
   const fileNameRef = useRef('');
+
+  useEffect(() => {
+    if (!initialFile) return;
+    workbookRef.current = initialFile.workbook;
+    rawSheetRef.current = initialFile.rawSheet;
+    fileNameRef.current = initialFile.fileName;
+    const isMulti = initialFile.workbook.SheetNames.length > 1;
+    if (isMulti) setSheets(initialFile.workbook.SheetNames);
+    setUploadedName('✓ ' + initialFile.fileName);
+    setPreview({ cols: initialFile.cols, data: initialFile.data });
+    setBanner({
+      type: 'success',
+      icon: '✓',
+      message: `Found <strong>${initialFile.cols.length} columns</strong> and <strong>${initialFile.data.length} rows</strong>.`,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function applySheet(wb: WorkBook, sheetName: string, isMulti: boolean) {
     const ws = wb.Sheets[sheetName];

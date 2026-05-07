@@ -59,6 +59,8 @@ export default function PriceUpdater() {
   const supplByCodeRef      = useRef<Record<string, unknown>>({});
   const matchArgsRef        = useRef<MatchArgs | null>(null);
   const matchSheetArgsRef   = useRef<{ eEanSheet: string; eCodeSheet: string; ePriceSheet: string } | null>(null);
+  const nullEanRowsRef      = useRef<Record<string, unknown>[]>([]);
+  const exactHeaderColRef   = useRef('');
 
   const exactSheetsRef = useRef<SheetCache>({});
   const supplSheetsRef = useRef<SheetCache>({});
@@ -164,6 +166,8 @@ export default function PriceUpdater() {
       return;
     }
 
+    exactHeaderColRef.current = exactFile!.cols.find(c => c.toLowerCase() === 'header') ?? '';
+
     const supplEanData   = getSupplSheet(supplEanSheet).data;
     const supplCodeData  = supplCode ? getSupplSheet(supplCodeSheet).data : [];
     const supplPriceData = getSupplSheet(supplPriceSheet).data;
@@ -171,6 +175,7 @@ export default function PriceUpdater() {
 
     const newAllOccurrences: Record<string, DupeOccurrence[]> = {};
     const newSupplByCode: Record<string, unknown> = {};
+    const newNullEanRows: Record<string, unknown>[] = [];
 
     for (let rowIdx = 0; rowIdx < rowCount; rowIdx++) {
       const code = supplCode ? String(supplCodeData[rowIdx]?.[supplCode] ?? '').trim() : '';
@@ -187,12 +192,16 @@ export default function PriceUpdater() {
       const priceVal = supplPriceData[rowIdx]?.[supplPrice];
       const baseRow = supplEanData[rowIdx] ?? {};
 
+      if (Object.keys(rowEans).length === 0) newNullEanRows.push(baseRow);
+
       Object.keys(rowEans).forEach(ean => {
         if (!newAllOccurrences[ean]) newAllOccurrences[ean] = [];
         newAllOccurrences[ean].push({ price: priceVal, row: baseRow });
       });
       if (code && !newSupplByCode[code]) newSupplByCode[code] = priceVal;
     }
+
+    nullEanRowsRef.current = newNullEanRows;
 
     const newSupplByEan: Record<string, unknown> = {};
     const newDupeSelections: Record<string, number> = {};
@@ -235,12 +244,15 @@ export default function PriceUpdater() {
     const usedDupeEans = new Set<string>();
     const reportRows: ReportRow[] = [];
     const unmatched: MatchResults['unmatched'] = [];
+    const nullEanExactList: Record<string, unknown>[] = [];
 
     const resultData = exactFile!.data.map((primaryRow, rowIdx) => {
       const copy: Record<string, unknown> = { ...primaryRow };
       const ean  = normalizeEan(exactEanData[rowIdx]?.[eEanCol] ?? '');
       const code = eCodeCol ? String(exactCodeData[rowIdx]?.[eCodeCol] ?? '').trim() : '';
       const oldPrice = exactPriceData[rowIdx]?.[ePriceCol];
+
+      if (!ean) nullEanExactList.push(primaryRow);
       let newPrice: unknown;
       let matchedBy = '';
 
@@ -300,6 +312,8 @@ export default function PriceUpdater() {
       dupeData,
       dupesList,
       usedDupeEans: [...usedDupeEans],
+      nullEanData: nullEanRowsRef.current,
+      nullEanExactData: nullEanExactList,
       resultPreviewCols,
       resultPreviewData,
     };
@@ -320,7 +334,11 @@ export default function PriceUpdater() {
 
   function downloadFile() {
     const name = exactFile!.fileName.replace(/\.(xlsx?|xlsm|xlsb|ods|csv|tsv|txt)$/i, '_updated.xlsx');
-    downloadXLSX(results!.resultData, results!.resultCols, name);
+    const headerCol = exactHeaderColRef.current;
+    const data = headerCol
+      ? results!.resultData.filter(row => String(row[headerCol] ?? '').trim() === 'H')
+      : results!.resultData;
+    downloadXLSX(data, results!.resultCols, name);
   }
 
   function downloadReport() {
@@ -329,6 +347,16 @@ export default function PriceUpdater() {
 
   function downloadDupes() {
     downloadXLSX(results!.dupeData, Object.keys(results!.dupeData[0] || {}), 'duplicate_eans.xlsx', 'Duplicates');
+  }
+
+  function downloadNullEans() {
+    if (!results!.nullEanData.length) { alert('No supplier rows with missing EAN to download.'); return; }
+    downloadXLSX(results!.nullEanData, Object.keys(results!.nullEanData[0] || {}), 'supplier_missing_ean.xlsx', 'Missing EAN');
+  }
+
+  function downloadNullEansExact() {
+    if (!results!.nullEanExactData.length) { alert('No Exact rows with missing EAN to download.'); return; }
+    downloadXLSX(results!.nullEanExactData, Object.keys(results!.nullEanExactData[0] || {}), 'exact_missing_ean.xlsx', 'Missing EAN');
   }
 
   function downloadUnmatched() {
@@ -384,11 +412,13 @@ export default function PriceUpdater() {
               title="Exact Online export file"
               icon="📄"
               onFileLoaded={setExactFile}
+              initialFile={exactFile}
             />
             <FileUploadCard
               title="Supplier price list"
               icon="📋"
               onFileLoaded={setSupplFile}
+              initialFile={supplFile}
             />
           </div>
           <div className="actions">
@@ -629,6 +659,14 @@ export default function PriceUpdater() {
                 <div className="metric-val">{results.dupesList.length}</div>
                 <div className="metric-lbl">duplicate EANs</div>
               </div>
+              <div className="metric amber">
+                <div className="metric-val">{results.nullEanData.length}</div>
+                <div className="metric-lbl">missing EANs (supplier)</div>
+              </div>
+              <div className="metric amber">
+                <div className="metric-val">{results.nullEanExactData.length}</div>
+                <div className="metric-lbl">missing EANs (Exact)</div>
+              </div>
             </div>
 
             {/* Unmatched table */}
@@ -715,16 +753,107 @@ export default function PriceUpdater() {
                 </div>
               </div>
             )}
+
+            {/* Null / missing EAN table */}
+            {results.nullEanData.length > 0 && (
+              <div className="table-section">
+                <div className="table-section-title">Missing EAN — supplier rows with no barcode (silently skipped)</div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        {supplCode && <th>Article code</th>}
+                        {supplPrice && <th>Price</th>}
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {results.nullEanData.slice(0, 5).map((row, i) => (
+                        <tr key={i}>
+                          <td style={{ color: 'var(--text-secondary)' }}>{i + 1}</td>
+                          {supplCode && <td>{row[supplCode] !== undefined ? String(row[supplCode]) : '—'}</td>}
+                          {supplPrice && <td>{row[supplPrice] !== undefined ? String(row[supplPrice]) : '—'}</td>}
+                          <td><span className="badge badge-amber">No EAN</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {results.nullEanData.length > 5 && (
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+                    Showing 5 of {results.nullEanData.length} rows with missing EAN — download to see all.
+                  </div>
+                )}
+                <div style={{ marginTop: 8 }}>
+                  <button className="btn btn-sm" onClick={downloadNullEans}>⬇ Download missing EAN rows (.xlsx)</button>
+                </div>
+              </div>
+            )}
+
+            {/* Null EAN — Exact file */}
+            {results.nullEanExactData.length > 0 && (
+              <div className="table-section">
+                <div className="table-section-title">Missing EAN — Exact file rows with no barcode (cannot be updated)</div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        {exactCode && <th>Article code</th>}
+                        <th>Current price</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {results.nullEanExactData.slice(0, 5).map((row, i) => (
+                        <tr key={i}>
+                          <td style={{ color: 'var(--text-secondary)' }}>{i + 1}</td>
+                          {exactCode && <td>{row[exactCode] !== undefined ? String(row[exactCode]) : '—'}</td>}
+                          <td>{exactPrice && row[exactPrice] !== undefined ? String(row[exactPrice]) : '—'}</td>
+                          <td><span className="badge badge-amber">No EAN</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {results.nullEanExactData.length > 5 && (
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+                    Showing 5 of {results.nullEanExactData.length} rows with missing EAN — download to see all.
+                  </div>
+                )}
+                <div style={{ marginTop: 8 }}>
+                  <button className="btn btn-sm" onClick={downloadNullEansExact}>⬇ Download missing EAN rows (.xlsx)</button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Updated file preview */}
           <div className="card">
             <div className="card-title">Updated file preview</div>
             <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
-              First 5 updated rows — use the arrows to page through all columns.
+              {exactHeaderColRef.current
+                ? `First updated rows where ${exactHeaderColRef.current} = H — use the arrows to page through all columns.`
+                : 'First 5 updated rows — use the arrows to page through all columns.'}
             </p>
-            <PreviewTable cols={results.resultPreviewCols} data={results.resultPreviewData} />
+            <PreviewTable
+              cols={results.resultPreviewCols}
+              data={exactHeaderColRef.current
+                ? results.resultPreviewData.filter(row => String(row[exactHeaderColRef.current] ?? '').trim() === 'H')
+                : results.resultPreviewData}
+            />
           </div>
+
+          {exactHeaderColRef.current && (() => {
+            const filtered = results.resultData.filter(row => String(row[exactHeaderColRef.current] ?? '').trim() === 'H');
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg-secondary)', border: '0.5px solid var(--border)', borderRadius: 'var(--radius-md)', fontSize: 12, color: 'var(--text-secondary)' }}>
+                <span style={{ color: 'var(--green-text)', fontWeight: 500 }}>✓ Header filter active</span>
+                <span>Download will contain only rows where <strong>{exactHeaderColRef.current} = H</strong> — {filtered.length} of {results.resultData.length} rows.</span>
+              </div>
+            );
+          })()}
 
           <div className="actions">
             <button className="btn" onClick={() => { setStep(2); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>← Back</button>

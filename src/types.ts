@@ -52,6 +52,8 @@ export interface MatchResults {
   dupeData: Record<string, unknown>[];
   dupesList: [string, number][];
   usedDupeEans: string[];
+  nullEanData: Record<string, unknown>[];
+  nullEanExactData: Record<string, unknown>[];
   resultPreviewCols: string[];
   resultPreviewData: Record<string, unknown>[];
 }
