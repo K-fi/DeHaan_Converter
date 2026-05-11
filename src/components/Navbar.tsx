@@ -1,19 +1,23 @@
-import { NavLink } from 'react-router-dom';
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useLang } from '../context/LangContext';
 
 export default function Navbar() {
   const { lang, setLang, t } = useLang();
+  const pathname = usePathname();
 
   return (
     <nav className="navbar">
       <div className="navbar-brand">De Haan Converter</div>
       <div className="navbar-links">
-        <NavLink to="/" end className={({ isActive }) => `navbar-link${isActive ? ' active' : ''}`}>
+        <Link href="/" className={`navbar-link${pathname === '/' || pathname === '/price-updater' ? ' active' : ''}`}>
           {t('navPrice')}
-        </NavLink>
-        <NavLink to="/converter" className={({ isActive }) => `navbar-link${isActive ? ' active' : ''}`}>
+        </Link>
+        <Link href="/converter" className={`navbar-link${pathname === '/converter' ? ' active' : ''}`}>
           {t('navConverter')}
-        </NavLink>
+        </Link>
       </div>
       <div style={{ marginLeft: 'auto', display: 'flex', border: '0.5px solid var(--border-md)', borderRadius: 6, overflow: 'hidden', fontSize: 12 }}>
         <button

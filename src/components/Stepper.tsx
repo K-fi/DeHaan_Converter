@@ -1,3 +1,5 @@
+'use client';
+
 import { useLang } from '../context/LangContext';
 
 interface StepperProps {

@@ -1,4 +1,6 @@
-import { createContext, useContext, useState } from 'react';
+'use client';
+
+import { createContext, useContext, useState, useEffect } from 'react';
 import { translate } from '../i18n';
 import type { Lang } from '../i18n';
 
@@ -11,10 +13,12 @@ interface LangCtx {
 const LangContext = createContext<LangCtx>({ lang: 'nl', setLang: () => {}, t: k => k });
 
 export function LangProvider({ children }: { children: React.ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(() => {
+  const [lang, setLangState] = useState<Lang>('nl');
+
+  useEffect(() => {
     const saved = localStorage.getItem('dehaan-lang');
-    return saved === 'en' ? 'en' : 'nl';
-  });
+    if (saved === 'en') setLangState('en');
+  }, []);
 
   function setLang(l: Lang) {
     setLangState(l);

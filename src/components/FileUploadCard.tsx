@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useRef, useEffect } from 'react';
 import { readFileRaw, sheetTo2D } from '../utils/xlsx';
 import { detectHeaderRow, parseFromHeaderRow } from '../utils/headers';
