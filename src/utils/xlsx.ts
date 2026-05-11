@@ -5,10 +5,13 @@ export function readFileRaw(file: File, cb: (wb: XLSX.WorkBook) => void): void {
   const isText = /\.(csv|tsv|txt)$/i.test(file.name);
   r.onload = (e: ProgressEvent<FileReader>) => {
     const result = e.target!.result;
-    const wb = isText
-      ? XLSX.read(result as string, { type: 'string', raw: false })
-      : XLSX.read(result as ArrayBuffer, { type: 'array', cellDates: true, raw: false });
-    cb(wb);
+    // Defer heavy XLSX.read so any pending loading-state paint can flush first
+    setTimeout(() => {
+      const wb = isText
+        ? XLSX.read(result as string, { type: 'string', raw: false })
+        : XLSX.read(result as ArrayBuffer, { type: 'array', cellDates: true, raw: false });
+      cb(wb);
+    }, 0);
   };
   isText ? r.readAsText(file) : r.readAsArrayBuffer(file);
 }

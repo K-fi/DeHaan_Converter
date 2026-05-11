@@ -46,6 +46,8 @@ export default function PriceUpdater() {
   const [supplColBanner, setSupplColBanner] = useState<BannerInfo | null>(null);
   const [results,        setResults]        = useState<MatchResults | null>(null);
   const [dupeSelections, setDupeSelections] = useState<Record<string, number>>({});
+  const [processing,     setProcessing]     = useState(false);
+  const [downloading,    setDownloading]    = useState(false);
 
   const autoDetRef        = useRef<AutoDetected>({});
   const allOccurrencesRef = useRef<Record<string, DupeOccurrence[]>>({});
@@ -121,53 +123,61 @@ export default function PriceUpdater() {
       alert(lang === 'nl' ? 'Selecteer alle verplichte kolommen (gemarkeerd met *).' : 'Please select all required columns (marked with *).'); return;
     }
 
+    // Capture synchronous data before deferring to setTimeout
     exactHeaderColRef.current = exactFile!.cols.find(c => c.toLowerCase() === 'header') ?? '';
-
     const supplEanData   = getSupplSheet(supplEanSheet).data;
     const supplCodeData  = supplCode ? getSupplSheet(supplCodeSheet).data : [];
     const supplPriceData = getSupplSheet(supplPriceSheet).data;
     const rowCount = supplFile!.data.length;
 
-    const newAllOccurrences: Record<string, DupeOccurrence[]> = {};
-    const newSupplByCode: Record<string, unknown> = {};
-    const newNullEanRows: Record<string, unknown>[] = [];
+    setProcessing(true);
 
-    for (let rowIdx = 0; rowIdx < rowCount; rowIdx++) {
-      const code = supplCode ? String(supplCodeData[rowIdx]?.[supplCode] ?? '').trim() : '';
-      const rowEans: Record<string, boolean> = {};
-      const e = normalizeEan(supplEanData[rowIdx]?.[supplEan] ?? '');
-      if (e) rowEans[e] = true;
-      supplExtraEans.forEach(col => { const e2 = normalizeEan(supplEanData[rowIdx]?.[col] ?? ''); if (e2) rowEans[e2] = true; });
-      const priceVal = supplPriceData[rowIdx]?.[supplPrice];
-      const baseRow  = supplEanData[rowIdx] ?? {};
-      if (Object.keys(rowEans).length === 0) newNullEanRows.push(baseRow);
-      Object.keys(rowEans).forEach(ean => {
-        if (!newAllOccurrences[ean]) newAllOccurrences[ean] = [];
-        newAllOccurrences[ean].push({ price: priceVal, row: baseRow });
-      });
-      if (code && !newSupplByCode[code]) newSupplByCode[code] = priceVal;
-    }
+    setTimeout(() => {
+      try {
+        const newAllOccurrences: Record<string, DupeOccurrence[]> = {};
+        const newSupplByCode: Record<string, unknown> = {};
+        const newNullEanRows: Record<string, unknown>[] = [];
 
-    nullEanRowsRef.current = newNullEanRows;
+        for (let rowIdx = 0; rowIdx < rowCount; rowIdx++) {
+          const code = supplCode ? String(supplCodeData[rowIdx]?.[supplCode] ?? '').trim() : '';
+          const rowEans: Record<string, boolean> = {};
+          const e = normalizeEan(supplEanData[rowIdx]?.[supplEan] ?? '');
+          if (e) rowEans[e] = true;
+          supplExtraEans.forEach(col => { const e2 = normalizeEan(supplEanData[rowIdx]?.[col] ?? ''); if (e2) rowEans[e2] = true; });
+          const priceVal = supplPriceData[rowIdx]?.[supplPrice];
+          const baseRow  = supplEanData[rowIdx] ?? {};
+          if (Object.keys(rowEans).length === 0) newNullEanRows.push(baseRow);
+          Object.keys(rowEans).forEach(ean => {
+            if (!newAllOccurrences[ean]) newAllOccurrences[ean] = [];
+            newAllOccurrences[ean].push({ price: priceVal, row: baseRow });
+          });
+          if (code && !newSupplByCode[code]) newSupplByCode[code] = priceVal;
+        }
 
-    const newSupplByEan: Record<string, unknown> = {};
-    const newDupeSelections: Record<string, number> = {};
-    Object.keys(newAllOccurrences).forEach(ean => {
-      const occs = newAllOccurrences[ean];
-      if (occs.length > 1) newDupeSelections[ean] = 0;
-      newSupplByEan[ean] = occs[0].price;
-    });
+        nullEanRowsRef.current = newNullEanRows;
 
-    allOccurrencesRef.current = newAllOccurrences;
-    supplByEanRef.current     = newSupplByEan;
-    supplByCodeRef.current    = newSupplByCode;
-    matchArgsRef.current      = { eEanCol: exactEan, eCodeCol: exactCode, ePriceCol: exactPrice, fromValue: activeFrom, toValue: activeTo };
-    matchSheetArgsRef.current = { eEanSheet: exactEanSheet, eCodeSheet: exactCodeSheet, ePriceSheet: exactPriceSheet };
+        const newSupplByEan: Record<string, unknown> = {};
+        const newDupeSelections: Record<string, number> = {};
+        Object.keys(newAllOccurrences).forEach(ean => {
+          const occs = newAllOccurrences[ean];
+          if (occs.length > 1) newDupeSelections[ean] = 0;
+          newSupplByEan[ean] = occs[0].price;
+        });
 
-    setDupeSelections(newDupeSelections);
-    setResults(computeMatching(newSupplByEan, newSupplByCode));
-    setStep(3);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+        allOccurrencesRef.current = newAllOccurrences;
+        supplByEanRef.current     = newSupplByEan;
+        supplByCodeRef.current    = newSupplByCode;
+        matchArgsRef.current      = { eEanCol: exactEan, eCodeCol: exactCode, ePriceCol: exactPrice, fromValue: activeFrom, toValue: activeTo };
+        matchSheetArgsRef.current = { eEanSheet: exactEanSheet, eCodeSheet: exactCodeSheet, ePriceSheet: exactPriceSheet };
+
+        setDupeSelections(newDupeSelections);
+        setResults(computeMatching(newSupplByEan, newSupplByCode));
+        setStep(3);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } finally {
+        setProcessing(false);
+      }
+    }, 30);
   }
 
   function computeMatching(supplByEan: Record<string, unknown>, supplByCode: Record<string, unknown>): MatchResults {
@@ -217,8 +227,10 @@ export default function PriceUpdater() {
       return copy;
     });
 
-    const resultCols = [...exactFile!.cols];
-    resultData.forEach(row => { Object.keys(row).forEach(k => { if (!resultCols.includes(k)) resultCols.push(k); }); });
+    // O(n) column dedup using Set instead of O(n²) Array.includes
+    const resultColSet = new Set(exactFile!.cols);
+    resultData.forEach(row => { Object.keys(row).forEach(k => resultColSet.add(k)); });
+    const resultCols = [...resultColSet];
 
     const dupeData: Record<string, unknown>[] = [];
     dupesList.forEach(([ean, count]) => { allOccurrences[ean].forEach(occ => { dupeData.push({ EAN: ean, 'Total occurrences': count, ...occ.row }); }); });
@@ -248,40 +260,52 @@ export default function PriceUpdater() {
 
   // ── Downloads ────────────────────────────────────────────
 
-  function downloadFile() {
-    const name = exactFile!.fileName.replace(/\.(xlsx?|xlsm|xlsb|ods|csv|tsv|txt)$/i, '_updated.xlsx');
-    const headerCol = exactHeaderColRef.current;
-    const data = headerCol ? results!.resultData.filter(row => String(row[headerCol] ?? '').trim() === 'H') : results!.resultData;
-    downloadXLSX(data, results!.resultCols, name);
+  function withDownload(fn: () => void) {
+    setDownloading(true);
+    setTimeout(() => {
+      try { fn(); } finally { setDownloading(false); }
+    }, 30);
   }
 
-  function downloadReport()      { downloadCSV(results!.reportRows, 'price_update_report.csv'); }
-  function downloadDupes()       { downloadXLSX(results!.dupeData, Object.keys(results!.dupeData[0] || {}), 'duplicate_eans.xlsx', 'Duplicates'); }
-  function downloadNullEans()    { if (!results!.nullEanData.length) return; downloadXLSX(results!.nullEanData, Object.keys(results!.nullEanData[0] || {}), 'supplier_missing_ean.xlsx', 'Missing EAN'); }
-  function downloadNullEansExact() { if (!results!.nullEanExactData.length) return; downloadXLSX(results!.nullEanExactData, Object.keys(results!.nullEanExactData[0] || {}), 'exact_missing_ean.xlsx', 'Missing EAN'); }
-  function downloadUnmatched() {
-    if (!results!.unmatched.length) return;
-    const { eEanCol, eCodeCol } = matchArgsRef.current!;
-    const unmatchedData: Record<string, string>[] = results!.unmatched.map(u => {
-      const exactRow = u.exactRow || {};
-      let descCol = '', unitCol = '', currCol = '';
-      Object.keys(exactRow).forEach(k => {
-        const n = k.toLowerCase();
-        if (!descCol && DESC_HINTS.some(h => n.includes(h))) descCol = k;
-        if (!unitCol && UNIT_HINTS.some(h => n.includes(h))) unitCol = k;
-        if (!currCol && CURR_HINTS.some(h => n.includes(h))) currCol = k;
-      });
-      return {
-        'Header': '',
-        'Item code': eCodeCol && exactRow[eCodeCol] ? String(exactRow[eCodeCol]).trim() : '',
-        'Item descri': descCol && exactRow[descCol] ? String(exactRow[descCol]).trim() : '',
-        'Purchase u': unitCol && exactRow[unitCol] ? String(exactRow[unitCol]).trim() : '',
-        'Purchase u Currency': currCol && exactRow[currCol] ? String(exactRow[currCol]).trim() : 'EUR',
-        'Barcode': eEanCol && exactRow[eEanCol] ? String(exactRow[eEanCol]).trim() : '',
-        'status artikel': 'Vervallen',
-      };
+  function downloadFile() {
+    withDownload(() => {
+      const name = exactFile!.fileName.replace(/\.(xlsx?|xlsm|xlsb|ods|csv|tsv|txt)$/i, '_updated.xlsx');
+      const headerCol = exactHeaderColRef.current;
+      const data = headerCol ? results!.resultData.filter(row => String(row[headerCol] ?? '').trim() === 'H') : results!.resultData;
+      downloadXLSX(data, results!.resultCols, name);
     });
-    downloadXLSX(unmatchedData, ['Header', 'Item code', 'Item descri', 'Purchase u', 'Purchase u Currency', 'Barcode', 'status artikel'], 'unmatched_products.xlsx', 'Unmatched');
+  }
+
+  function downloadReport()   { withDownload(() => downloadCSV(results!.reportRows, 'price_update_report.csv')); }
+  function downloadDupes()    { withDownload(() => downloadXLSX(results!.dupeData, Object.keys(results!.dupeData[0] || {}), 'duplicate_eans.xlsx', 'Duplicates')); }
+  function downloadNullEans() { withDownload(() => { if (!results!.nullEanData.length) return; downloadXLSX(results!.nullEanData, Object.keys(results!.nullEanData[0] || {}), 'supplier_missing_ean.xlsx', 'Missing EAN'); }); }
+  function downloadNullEansExact() { withDownload(() => { if (!results!.nullEanExactData.length) return; downloadXLSX(results!.nullEanExactData, Object.keys(results!.nullEanExactData[0] || {}), 'exact_missing_ean.xlsx', 'Missing EAN'); }); }
+
+  function downloadUnmatched() {
+    withDownload(() => {
+      if (!results!.unmatched.length) return;
+      const { eEanCol, eCodeCol } = matchArgsRef.current!;
+      const unmatchedData: Record<string, string>[] = results!.unmatched.map(u => {
+        const exactRow = u.exactRow || {};
+        let descCol = '', unitCol = '', currCol = '';
+        Object.keys(exactRow).forEach(k => {
+          const n = k.toLowerCase();
+          if (!descCol && DESC_HINTS.some(h => n.includes(h))) descCol = k;
+          if (!unitCol && UNIT_HINTS.some(h => n.includes(h))) unitCol = k;
+          if (!currCol && CURR_HINTS.some(h => n.includes(h))) currCol = k;
+        });
+        return {
+          'Header': '',
+          'Item code': eCodeCol && exactRow[eCodeCol] ? String(exactRow[eCodeCol]).trim() : '',
+          'Item descri': descCol && exactRow[descCol] ? String(exactRow[descCol]).trim() : '',
+          'Purchase u': unitCol && exactRow[unitCol] ? String(exactRow[unitCol]).trim() : '',
+          'Purchase u Currency': currCol && exactRow[currCol] ? String(exactRow[currCol]).trim() : 'EUR',
+          'Barcode': eEanCol && exactRow[eEanCol] ? String(exactRow[eEanCol]).trim() : '',
+          'status artikel': 'Vervallen',
+        };
+      });
+      downloadXLSX(unmatchedData, ['Header', 'Item code', 'Item descri', 'Purchase u', 'Purchase u Currency', 'Barcode', 'status artikel'], 'unmatched_products.xlsx', 'Unmatched');
+    });
   }
 
   // ── Render ───────────────────────────────────────────────
@@ -444,8 +468,10 @@ export default function PriceUpdater() {
           </div>
 
           <div className="actions">
-            <button className="btn" onClick={() => { setStep(1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>{t('btnBack')}</button>
-            <button className="btn btn-primary" onClick={processFiles}>{t('puProcess')}</button>
+            <button className="btn" disabled={processing} onClick={() => { setStep(1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>{t('btnBack')}</button>
+            <button className="btn btn-primary" disabled={processing} onClick={processFiles}>
+              {processing ? (lang === 'nl' ? 'Verwerken…' : 'Processing…') : t('puProcess')}
+            </button>
           </div>
         </>
       )}
@@ -487,7 +513,7 @@ export default function PriceUpdater() {
                     </tbody>
                   </table>
                 </div>
-                <div style={{ marginTop: 8 }}><button className="btn btn-sm" onClick={downloadUnmatched}>{t('puDlUnmatched')}</button></div>
+                <div style={{ marginTop: 8 }}><button className="btn btn-sm" disabled={downloading} onClick={downloadUnmatched}>{t('puDlUnmatched')}</button></div>
               </div>
             )}
 
@@ -529,8 +555,8 @@ export default function PriceUpdater() {
                   </div>
                 )}
                 <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <button className="btn btn-sm" onClick={reapplyDupeSelections}>{t('puReapplyDupes')}</button>
-                  <button className="btn btn-sm" onClick={downloadDupes}>{t('puDlDupes')}</button>
+                  <button className="btn btn-sm" disabled={downloading} onClick={reapplyDupeSelections}>{t('puReapplyDupes')}</button>
+                  <button className="btn btn-sm" disabled={downloading} onClick={downloadDupes}>{t('puDlDupes')}</button>
                 </div>
               </div>
             )}
@@ -559,7 +585,7 @@ export default function PriceUpdater() {
                     {lang === 'nl' ? `5 van ${results.nullEanData.length} regels met ontbrekende EAN getoond — download voor alle.` : `Showing 5 of ${results.nullEanData.length} rows with missing EAN — download to see all.`}
                   </div>
                 )}
-                <div style={{ marginTop: 8 }}><button className="btn btn-sm" onClick={downloadNullEans}>{t('puDlNullEan')}</button></div>
+                <div style={{ marginTop: 8 }}><button className="btn btn-sm" disabled={downloading} onClick={downloadNullEans}>{t('puDlNullEan')}</button></div>
               </div>
             )}
 
@@ -587,7 +613,7 @@ export default function PriceUpdater() {
                     {lang === 'nl' ? `5 van ${results.nullEanExactData.length} regels met ontbrekende EAN getoond — download voor alle.` : `Showing 5 of ${results.nullEanExactData.length} rows with missing EAN — download to see all.`}
                   </div>
                 )}
-                <div style={{ marginTop: 8 }}><button className="btn btn-sm" onClick={downloadNullEansExact}>{t('puDlNullEan')}</button></div>
+                <div style={{ marginTop: 8 }}><button className="btn btn-sm" disabled={downloading} onClick={downloadNullEansExact}>{t('puDlNullEan')}</button></div>
               </div>
             )}
           </div>
@@ -628,8 +654,10 @@ export default function PriceUpdater() {
 
           <div className="actions">
             <button className="btn" onClick={() => { setStep(2); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>{t('btnBack')}</button>
-            <button className="btn" onClick={downloadReport}>{t('puDlReport')}</button>
-            <button className="btn btn-download" onClick={downloadFile}>{t('puDlFile')}</button>
+            <button className="btn" disabled={downloading} onClick={downloadReport}>{t('puDlReport')}</button>
+            <button className="btn btn-download" disabled={downloading} onClick={downloadFile}>
+              {downloading ? (lang === 'nl' ? 'Downloaden…' : 'Downloading…') : t('puDlFile')}
+            </button>
           </div>
         </>
       )}

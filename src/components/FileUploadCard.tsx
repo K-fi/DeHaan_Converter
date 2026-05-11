@@ -20,6 +20,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
   const [sheets, setSheets] = useState<string[]>([]);
   const [headerRowNum, setHeaderRowNum] = useState(1);
   const [preview, setPreview] = useState<{ cols: string[]; data: Record<string, unknown>[] } | null>(null);
+  const [parsing, setParsing] = useState(false);
 
   const { lang, t } = useLang();
 
@@ -67,6 +68,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
   }
 
   function handleFile(file: File) {
+    setParsing(true);
     fileNameRef.current = file.name;
     readFileRaw(file, (wb) => {
       workbookRef.current = wb;
@@ -84,6 +86,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
         setSheets([]);
       }
       applySheet(wb, wb.SheetNames[0], isMulti);
+      setParsing(false);
     });
   }
 
@@ -112,24 +115,34 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
     <div className="card">
       <div className="card-title">{title}</div>
       <label
-        className={`upload-zone${uploadedName ? ' has-file' : ''}`}
+        className={`upload-zone${uploadedName && !parsing ? ' has-file' : ''}`}
         onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+        onDrop={(e) => { e.preventDefault(); if (parsing) return; const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
       >
-        <span className="upload-icon">{icon}</span>
-        <div className="upload-label"><strong>{t('fuClickUpload')}</strong> {t('fuOrDrop')}</div>
-        <div className="file-formats">.xlsx · .xls · .xlsm · .ods · .csv · .tsv</div>
-        {uploadedName && <div className="file-name">{uploadedName}</div>}
+        {parsing ? (
+          <>
+            <span className="upload-icon">⏳</span>
+            <div className="upload-label">{lang === 'nl' ? 'Bestand verwerken…' : 'Parsing file…'}</div>
+          </>
+        ) : (
+          <>
+            <span className="upload-icon">{icon}</span>
+            <div className="upload-label"><strong>{t('fuClickUpload')}</strong> {t('fuOrDrop')}</div>
+            <div className="file-formats">.xlsx · .xls · .xlsm · .ods · .csv · .tsv</div>
+            {uploadedName && <div className="file-name">{uploadedName}</div>}
+          </>
+        )}
         <input
           type="file"
           accept=".xlsx,.xls,.xlsm,.xlsb,.ods,.csv,.tsv,.txt"
+          disabled={parsing}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
         />
       </label>
 
-      {banner && <Banner {...banner} />}
+      {!parsing && banner && <Banner {...banner} />}
 
-      {sheets.length > 1 && (
+      {!parsing && sheets.length > 1 && (
         <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
           <span>{t('fuSheetLabel')}:</span>
           <select style={{ flex: 1, fontSize: 12, padding: '5px 8px' }} onChange={(e) => handleSheetChange(e.target.value)}>
@@ -138,7 +151,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
         </div>
       )}
 
-      {uploadedName && (
+      {!parsing && uploadedName && (
         <div className="header-row-selector">
           <span>{t('fuHeaderOnRow')}:</span>
           <input
@@ -151,7 +164,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
         </div>
       )}
 
-      {preview && <PreviewTable cols={preview.cols} data={preview.data} />}
+      {!parsing && preview && <PreviewTable cols={preview.cols} data={preview.data} />}
     </div>
   );
 }

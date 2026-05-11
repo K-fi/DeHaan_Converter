@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo, useCallback, memo, useEffect } from 'react';
 import Stepper from '../components/Stepper';
 import FileUploadCard from '../components/FileUploadCard';
 import PreviewTable from '../components/PreviewTable';
@@ -24,6 +24,8 @@ const KLEUR_HINTS         = ['kleur', 'color', 'colour'];
 const OMSCHR_HINTS        = ['omschrijving', 'omschr', 'description', 'descri', 'naam', 'name'];
 const PRODUCTNAAM_HINTS   = ['productnaam', 'productname', 'titel', 'title'];
 
+const KLEUR_PAGE_SIZE = 50;
+
 const INPUT_STYLE: React.CSSProperties = {
   width: '100%', padding: '7px 10px',
   border: '0.5px solid var(--border-md)',
@@ -31,6 +33,69 @@ const INPUT_STYLE: React.CSSProperties = {
   background: 'var(--bg)', color: 'var(--text)',
   fontSize: 13, fontFamily: 'inherit',
 };
+
+// ── KleurRow — memoized so only the affected row re-renders ──────────────────
+//
+// Local `localValue` state decouples keystrokes from the parent kleurMapping
+// update: the parent is only updated on blur or Enter, not on every keystroke.
+// Combined with memo + stable useCallback handlers, this means typing in one
+// color input does NOT re-render the other 499 rows.
+
+interface KleurRowProps {
+  original: string;
+  mapped: string;
+  isSelected: boolean;
+  isModified: boolean;
+  onSelect: (original: string, checked: boolean) => void;
+  onValueChange: (original: string, value: string) => void;
+  onReset: (original: string) => void;
+}
+
+const KleurRow = memo(function KleurRow({
+  original, mapped, isSelected, isModified, onSelect, onValueChange, onReset,
+}: KleurRowProps) {
+  const [localValue, setLocalValue] = useState(mapped);
+
+  // Sync when bulk rename or reset changes the committed value externally
+  useEffect(() => { setLocalValue(mapped); }, [mapped]);
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <input
+        type="checkbox"
+        checked={isSelected}
+        onChange={e => onSelect(original, e.target.checked)}
+        style={{ flexShrink: 0 }}
+      />
+      <span style={{ flex: '0 0 200px', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {original}
+      </span>
+      <span style={{ fontSize: 12, color: 'var(--text-secondary)', width: 16, textAlign: 'center', flexShrink: 0 }}>→</span>
+      <input
+        type="text"
+        value={localValue}
+        onChange={e => setLocalValue(e.target.value)}
+        onBlur={() => { if (localValue !== mapped) onValueChange(original, localValue); }}
+        onKeyDown={e => { if (e.key === 'Enter') { onValueChange(original, localValue); (e.target as HTMLInputElement).blur(); } }}
+        style={{
+          flex: 1, fontSize: 12, padding: '3px 8px',
+          border: `0.5px solid ${isModified ? 'var(--green-dark)' : 'var(--border-md)'}`,
+          borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit',
+        }}
+      />
+      {isModified && (
+        <button
+          className="btn btn-sm"
+          style={{ padding: '1px 7px', fontSize: 11, flexShrink: 0 }}
+          title="Reset"
+          onClick={() => onReset(original)}
+        >
+          ↺
+        </button>
+      )}
+    </div>
+  );
+});
 
 // ── Multi-column combiner ────────────────────────────────
 
@@ -118,7 +183,8 @@ export default function SupplierConverter() {
   const [kleurRef,            setKleurRef]            = useState<ColRef>(EMPTY_REF);
   const [kleurMapping,        setKleurMapping]        = useState<Record<string, string>>({});
   const [kleurSearch,         setKleurSearch]         = useState('');
-  const [kleurSelected,       setKleurSelected]       = useState<string[]>([]);
+  const [kleurSelected,       setKleurSelected]       = useState<Record<string, boolean>>({});
+  const [kleurPage,           setKleurPage]           = useState(0);
   const [kleurBulkValue,      setKleurBulkValue]      = useState('');
   const [veiligheidsclassRef, setVeiligheidsclassRef] = useState<ColRef>(EMPTY_REF);
   const [geslachtRef,         setGeslachtRef]         = useState<ColRef>(EMPTY_REF);
@@ -127,13 +193,15 @@ export default function SupplierConverter() {
   const [omschrijvingRefs,    setOmschrijvingRefs]    = useState<ColRef[]>([]);
   const [productnaamRefs,     setProductnaamRefs]     = useState<ColRef[]>([]);
   const [outputData,          setOutputData]          = useState<Record<string, unknown>[] | null>(null);
+  const [processing,          setProcessing]          = useState(false);
+  const [downloading,         setDownloading]         = useState(false);
 
   const autoDetRef      = useRef<Record<string, string | null>>({});
   const parsedSheetsRef = useRef<Record<string, { cols: string[]; data: Record<string, unknown>[] }>>({});
 
   // ── Sheet helpers ────────────────────────────────────────
 
-  const sheetNames  = supplFile?.workbook.SheetNames ?? [];
+  const sheetNames   = supplFile?.workbook.SheetNames ?? [];
   const primarySheet = sheetNames[0] ?? '';
 
   function getSheetInfo(sheetName: string): { cols: string[]; data: Record<string, unknown>[] } {
@@ -163,7 +231,88 @@ export default function SupplierConverter() {
   function handleKleurRefChange(ref: ColRef) {
     setKleurRef(ref);
     setKleurMapping(buildKleurMapping(ref, kleurMapping));
-    setKleurSearch(''); setKleurSelected([]); setKleurBulkValue('');
+    setKleurSearch(''); setKleurSelected({}); setKleurBulkValue(''); setKleurPage(0);
+  }
+
+  // ── Memoized kleur computations ──────────────────────────
+  // These are only recomputed when their specific inputs change,
+  // preventing the entire color list from being rebuilt on every keystroke.
+
+  const kleurAllEntries = useMemo(
+    () => Object.entries(kleurMapping),
+    [kleurMapping],
+  );
+
+  const kleurTotalModified = useMemo(
+    () => kleurAllEntries.filter(([k, v]) => k !== v).length,
+    [kleurAllEntries],
+  );
+
+  const kleurFiltered = useMemo(() => {
+    if (!kleurSearch) return kleurAllEntries;
+    const q = kleurSearch.toLowerCase();
+    return kleurAllEntries.filter(([k]) => k.toLowerCase().includes(q));
+  }, [kleurAllEntries, kleurSearch]);
+
+  const kleurPageCount = useMemo(
+    () => Math.max(1, Math.ceil(kleurFiltered.length / KLEUR_PAGE_SIZE)),
+    [kleurFiltered],
+  );
+
+  const kleurSafePage = Math.min(kleurPage, kleurPageCount - 1);
+
+  const kleurPagedEntries = useMemo(
+    () => kleurFiltered.slice(kleurSafePage * KLEUR_PAGE_SIZE, (kleurSafePage + 1) * KLEUR_PAGE_SIZE),
+    [kleurFiltered, kleurSafePage],
+  );
+
+  const kleurPagedUnmod = useMemo(
+    () => kleurPagedEntries.filter(([k, v]) => k === v),
+    [kleurPagedEntries],
+  );
+
+  const kleurPagedMod = useMemo(
+    () => kleurPagedEntries.filter(([k, v]) => k !== v),
+    [kleurPagedEntries],
+  );
+
+  const kleurSelectedCount = useMemo(
+    () => Object.keys(kleurSelected).length,
+    [kleurSelected],
+  );
+
+  // O(1) membership check — kleurSelected is Record<string, boolean>
+  const allFilteredSelected =
+    kleurFiltered.length > 0 && kleurFiltered.every(([k]) => kleurSelected[k]);
+
+  // ── Stable KleurRow handlers (useCallback → stable refs → memo skips re-renders) ──
+
+  const handleKleurRowSelect = useCallback((original: string, checked: boolean) => {
+    setKleurSelected(prev => {
+      if (checked) return { ...prev, [original]: true };
+      const next = { ...prev };
+      delete next[original];
+      return next;
+    });
+  }, []);
+
+  const handleKleurRowValueChange = useCallback((original: string, value: string) => {
+    setKleurMapping(prev => ({ ...prev, [original]: value }));
+  }, []);
+
+  const handleKleurRowReset = useCallback((original: string) => {
+    setKleurMapping(prev => ({ ...prev, [original]: original }));
+  }, []);
+
+  function applyBulk() {
+    if (!kleurBulkValue.trim()) return;
+    const selectedKeys = Object.keys(kleurSelected);
+    setKleurMapping(prev => {
+      const next = { ...prev };
+      selectedKeys.forEach(k => { next[k] = kleurBulkValue; });
+      return next;
+    });
+    setKleurSelected({}); setKleurBulkValue('');
   }
 
   // ── Navigation ──────────────────────────────────────────
@@ -199,7 +348,7 @@ export default function SupplierConverter() {
     const kleurDet = mk('kleur');
     setKleurRef(kleurDet);
     setKleurMapping(buildKleurMapping(kleurDet, {}));
-    setKleurSearch(''); setKleurSelected([]); setKleurBulkValue('');
+    setKleurSearch(''); setKleurSelected({}); setKleurBulkValue(''); setKleurPage(0);
     setVeiligheidsclassRef(mk('veiligheid'));
     setGeslachtRef(mk('geslacht'));
     setMerkRef(mk('merk'));
@@ -245,7 +394,7 @@ export default function SupplierConverter() {
     const rowCount = sheetsData[primarySheet]?.length ?? supplFile!.data.length;
     const resolve = (ref: ColRef): ColRef => ({ sheet: ref.sheet || primarySheet, col: ref.col });
 
-    setOutputData(buildOutputRows({
+    const args = {
       sheetsData, rowCount, startingCode: code,
       hoofdleverancier: hoofdleverancier.trim(), btwInkoop,
       barcodeRef:               resolve(barcodeRef),
@@ -262,14 +411,28 @@ export default function SupplierConverter() {
       artikelcodeRef:           resolve(artikelcodeRef),
       omschrijvingRefs:         omschrijvingRefs.map(resolve),
       productnaamRefs:          productnaamRefs.map(resolve),
-    }));
-    setStep(3);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    setProcessing(true);
+    setTimeout(() => {
+      try {
+        setOutputData(buildOutputRows(args));
+        setStep(3);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } finally {
+        setProcessing(false);
+      }
+    }, 30);
   }
 
   function downloadFile() {
     const name = supplFile!.fileName.replace(/\.(xlsx?|xlsm|xlsb|ods|csv|tsv|txt)$/i, '_converted.xlsx');
-    downloadXLSX(outputData!, [...OUTPUT_COLS], name, 'Exact Import');
+    const data = outputData!;
+    setDownloading(true);
+    setTimeout(() => {
+      try { downloadXLSX(data, [...OUTPUT_COLS], name, 'Exact Import'); }
+      finally { setDownloading(false); }
+    }, 30);
   }
 
   // ── Field rendering helpers ──────────────────────────────
@@ -408,142 +571,161 @@ export default function SupplierConverter() {
           </div>
 
           {/* Color value mapping */}
-          {kleurRef.col && Object.keys(kleurMapping).length > 0 && (() => {
-            const allEntries = Object.entries(kleurMapping);
-            const totalModified = allEntries.filter(([k, v]) => k !== v).length;
-            const totalUnmodified = allEntries.length - totalModified;
-            const filtered = kleurSearch
-              ? allEntries.filter(([orig]) => orig.toLowerCase().includes(kleurSearch.toLowerCase()))
-              : allEntries;
-            const filteredUnmodified = filtered.filter(([k, v]) => k === v);
-            const filteredModified   = filtered.filter(([k, v]) => k !== v);
-            const allFilteredSelected = filtered.length > 0 && filtered.every(([k]) => kleurSelected.includes(k));
+          {kleurRef.col && kleurAllEntries.length > 0 && (
+            <div className="card">
+              <div className="card-title">{t('scKleurMapping')}</div>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+                {kleurSearch
+                  ? (lang === 'nl'
+                      ? `${kleurFiltered.length} van ${kleurAllEntries.length} waarden komen overeen met "${kleurSearch}" — `
+                      : `${kleurFiltered.length} of ${kleurAllEntries.length} values matching "${kleurSearch}" — `)
+                  : (lang === 'nl'
+                      ? `${kleurAllEntries.length} unieke kleurwaarden — `
+                      : `${kleurAllEntries.length} unique color values — `)
+                }
+                <span style={{ color: 'var(--green-dark)', fontWeight: 500 }}>{kleurTotalModified} {t('scKleurModified')}</span>
+                {', '}
+                <span style={{ color: 'var(--text-secondary)' }}>{kleurAllEntries.length - kleurTotalModified} {t('scKleurUnmodified')}</span>
+                {lang === 'nl'
+                  ? '. Bewerk de rechterkolom om te hernoemen, of selecteer meerdere voor bulkhernoemen.'
+                  : '. Edit the right column to rename, or select multiple and bulk-rename.'}
+              </p>
 
-            function applyBulk() {
-              if (!kleurBulkValue.trim()) return;
-              setKleurMapping(prev => {
-                const next = { ...prev };
-                kleurSelected.forEach(k => { next[k] = kleurBulkValue; });
-                return next;
-              });
-              setKleurSelected([]); setKleurBulkValue('');
-            }
+              {/* Search + select-all + reset */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                <input
+                  type="text"
+                  placeholder={t('scKleurSearchPh')}
+                  value={kleurSearch}
+                  onChange={e => { setKleurSearch(e.target.value); setKleurPage(0); }}
+                  style={{ flex: 1, fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--border-md)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }}
+                />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0, userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={allFilteredSelected}
+                    onChange={() => {
+                      if (allFilteredSelected) {
+                        setKleurSelected(prev => {
+                          const next = { ...prev };
+                          kleurFiltered.forEach(([k]) => delete next[k]);
+                          return next;
+                        });
+                      } else {
+                        setKleurSelected(prev => {
+                          const next = { ...prev };
+                          kleurFiltered.forEach(([k]) => { next[k] = true; });
+                          return next;
+                        });
+                      }
+                    }}
+                  />
+                  {kleurSearch ? t('scKleurSelectFiltered') : t('scKleurSelectAll')} ({kleurFiltered.length})
+                </label>
+                <button
+                  className="btn btn-sm"
+                  style={{ fontSize: 11, flexShrink: 0 }}
+                  onClick={() => {
+                    setKleurMapping(Object.fromEntries(kleurAllEntries.map(([k]) => [k, k])));
+                    setKleurSelected({}); setKleurBulkValue('');
+                  }}
+                >
+                  {t('scKleurResetAll')}
+                </button>
+              </div>
 
-            return (
-              <div className="card">
-                <div className="card-title">{t('scKleurMapping')}</div>
-                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-                  {kleurSearch
-                    ? (lang === 'nl'
-                        ? `${filtered.length} van ${allEntries.length} waarden komen overeen met "${kleurSearch}" — `
-                        : `${filtered.length} of ${allEntries.length} values matching "${kleurSearch}" — `)
-                    : (lang === 'nl'
-                        ? `${allEntries.length} unieke kleurwaarden — `
-                        : `${allEntries.length} unique color values — `)
-                  }
-                  <span style={{ color: 'var(--green-dark)', fontWeight: 500 }}>{totalModified} {t('scKleurModified')}</span>
-                  {', '}
-                  <span style={{ color: 'var(--text-secondary)' }}>{totalUnmodified} {t('scKleurUnmodified')}</span>
-                  {lang === 'nl'
-                    ? '. Bewerk de rechterkolom om te hernoemen, of selecteer meerdere voor bulkhernoemen.'
-                    : '. Edit the right column to rename, or select multiple and bulk-rename.'}
-                </p>
-
-                {/* Search + select-all */}
-                <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+              {/* Bulk rename bar */}
+              {kleurSelectedCount > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--bg-secondary)', border: '0.5px solid var(--border)', borderRadius: 4, marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-secondary)', flexShrink: 0 }}>
+                    {kleurSelectedCount} {lang === 'nl' ? 'geselecteerd' : 'selected'}
+                  </span>
                   <input
                     type="text"
-                    placeholder={t('scKleurSearchPh')}
-                    value={kleurSearch}
-                    onChange={e => setKleurSearch(e.target.value)}
-                    style={{ flex: 1, fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--border-md)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }}
+                    value={kleurBulkValue}
+                    onChange={e => setKleurBulkValue(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') applyBulk(); }}
+                    placeholder={t('scKleurNewValuePh')}
+                    style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: '0.5px solid var(--border-md)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }}
                   />
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0, userSelect: 'none' }}>
-                    <input
-                      type="checkbox"
-                      checked={allFilteredSelected}
-                      onChange={() => {
-                        const keys = filtered.map(([k]) => k);
-                        if (allFilteredSelected) setKleurSelected(prev => prev.filter(k => !keys.includes(k)));
-                        else setKleurSelected(prev => [...new Set([...prev, ...keys])]);
-                      }}
-                    />
-                    {kleurSearch ? t('scKleurSelectFiltered') : t('scKleurSelectAll')} ({filtered.length})
-                  </label>
-                  <button className="btn btn-sm" style={{ fontSize: 11, flexShrink: 0 }} onClick={() => { setKleurMapping(Object.fromEntries(allEntries.map(([k]) => [k, k]))); setKleurSelected([]); setKleurBulkValue(''); }}>
-                    {t('scKleurResetAll')}
-                  </button>
+                  <button className="btn btn-sm" style={{ flexShrink: 0 }} onClick={applyBulk}>{t('scKleurApply')}</button>
+                  <button className="btn btn-sm" style={{ flexShrink: 0 }} onClick={() => { setKleurSelected({}); setKleurBulkValue(''); }}>{t('scKleurCancel')}</button>
                 </div>
+              )}
 
-                {/* Bulk rename bar */}
-                {kleurSelected.length > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--bg-secondary)', border: '0.5px solid var(--border)', borderRadius: 4, marginBottom: 8 }}>
-                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', flexShrink: 0 }}>{kleurSelected.length} {t('scKleurSelected')}</span>
-                    <input
-                      type="text"
-                      value={kleurBulkValue}
-                      onChange={e => setKleurBulkValue(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') applyBulk(); }}
-                      placeholder={t('scKleurNewValuePh')}
-                      style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: '0.5px solid var(--border-md)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }}
-                    />
-                    <button className="btn btn-sm" style={{ flexShrink: 0 }} onClick={applyBulk}>{t('scKleurApply')}</button>
-                    <button className="btn btn-sm" style={{ flexShrink: 0 }} onClick={() => { setKleurSelected([]); setKleurBulkValue(''); }}>{t('scKleurCancel')}</button>
+              {/* Column headers */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, paddingLeft: 22 }}>
+                <span style={{ flex: '0 0 200px', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>{t('scKleurOriginal')}</span>
+                <span style={{ width: 16 }} />
+                <span style={{ flex: 1, fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>{t('scKleurOutput')}</span>
+              </div>
+
+              {/* Paginated rows — max KLEUR_PAGE_SIZE DOM nodes at a time */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 300, overflowY: 'auto' }}>
+                {kleurPagedEntries.length === 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '8px 0' }}>
+                    {t('scKleurNoMatch')} "{kleurSearch}".
                   </div>
                 )}
 
-                {/* Column headers */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, paddingLeft: 22 }}>
-                  <span style={{ flex: '0 0 200px', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>{t('scKleurOriginal')}</span>
-                  <span style={{ width: 16 }} />
-                  <span style={{ flex: 1, fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>{t('scKleurOutput')}</span>
-                </div>
-
-                {/* Value rows grouped */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 300, overflowY: 'auto' }}>
-                  {filtered.length === 0 && (
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '8px 0' }}>
-                      {t('scKleurNoMatch')} "{kleurSearch}".
+                {kleurPagedUnmod.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '4px 0 2px', opacity: 0.7 }}>
+                      {lang === 'nl' ? `Niet aangepast (${kleurPagedUnmod.length})` : `Unmodified (${kleurPagedUnmod.length})`}
                     </div>
-                  )}
+                    {kleurPagedUnmod.map(([original, mapped]) => (
+                      <KleurRow
+                        key={original}
+                        original={original}
+                        mapped={mapped}
+                        isSelected={kleurSelected[original] ?? false}
+                        isModified={false}
+                        onSelect={handleKleurRowSelect}
+                        onValueChange={handleKleurRowValueChange}
+                        onReset={handleKleurRowReset}
+                      />
+                    ))}
+                  </>
+                )}
 
-                  {filteredUnmodified.length > 0 && (
-                    <>
-                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '4px 0 2px', opacity: 0.7 }}>
-                        {lang === 'nl' ? `Niet aangepast (${filteredUnmodified.length})` : `Unmodified (${filteredUnmodified.length})`}
-                      </div>
-                      {filteredUnmodified.map(([original, mapped]) => (
-                        <div key={original} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <input type="checkbox" checked={kleurSelected.includes(original)} onChange={e => setKleurSelected(prev => e.target.checked ? [...prev, original] : prev.filter(k => k !== original))} style={{ flexShrink: 0 }} />
-                          <span style={{ flex: '0 0 200px', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{original}</span>
-                          <span style={{ fontSize: 12, color: 'var(--text-secondary)', width: 16, textAlign: 'center', flexShrink: 0 }}>→</span>
-                          <input type="text" value={mapped} onChange={e => setKleurMapping(prev => ({ ...prev, [original]: e.target.value }))} style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: '0.5px solid var(--border-md)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }} />
-                        </div>
-                      ))}
-                    </>
-                  )}
-
-                  {filteredModified.length > 0 && (
-                    <>
-                      {filteredUnmodified.length > 0 && <div style={{ borderTop: '0.5px solid var(--border)', margin: '6px 0 2px' }} />}
-                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green-dark)', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '2px 0', opacity: 0.85 }}>
-                        {lang === 'nl' ? `Aangepast (${filteredModified.length})` : `Modified (${filteredModified.length})`}
-                      </div>
-                      {filteredModified.map(([original, mapped]) => (
-                        <div key={original} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <input type="checkbox" checked={kleurSelected.includes(original)} onChange={e => setKleurSelected(prev => e.target.checked ? [...prev, original] : prev.filter(k => k !== original))} style={{ flexShrink: 0 }} />
-                          <span style={{ flex: '0 0 200px', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{original}</span>
-                          <span style={{ fontSize: 12, color: 'var(--text-secondary)', width: 16, textAlign: 'center', flexShrink: 0 }}>→</span>
-                          <input type="text" value={mapped} onChange={e => setKleurMapping(prev => ({ ...prev, [original]: e.target.value }))} style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: '0.5px solid var(--green-dark)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }} />
-                          <button className="btn btn-sm" style={{ padding: '1px 7px', fontSize: 11, flexShrink: 0 }} title="Reset" onClick={() => setKleurMapping(prev => ({ ...prev, [original]: original }))}>↺</button>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                </div>
+                {kleurPagedMod.length > 0 && (
+                  <>
+                    {kleurPagedUnmod.length > 0 && <div style={{ borderTop: '0.5px solid var(--border)', margin: '6px 0 2px' }} />}
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green-dark)', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '2px 0', opacity: 0.85 }}>
+                      {lang === 'nl' ? `Aangepast (${kleurPagedMod.length})` : `Modified (${kleurPagedMod.length})`}
+                    </div>
+                    {kleurPagedMod.map(([original, mapped]) => (
+                      <KleurRow
+                        key={original}
+                        original={original}
+                        mapped={mapped}
+                        isSelected={kleurSelected[original] ?? false}
+                        isModified={true}
+                        onSelect={handleKleurRowSelect}
+                        onValueChange={handleKleurRowValueChange}
+                        onReset={handleKleurRowReset}
+                      />
+                    ))}
+                  </>
+                )}
               </div>
-            );
-          })()}
+
+              {/* Pager */}
+              {kleurPageCount > 1 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, paddingTop: 8, borderTop: '0.5px solid var(--border)', marginTop: 6 }}>
+                  <button className="btn btn-sm" disabled={kleurSafePage === 0} onClick={() => setKleurPage(p => p - 1)}>‹</button>
+                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                    {kleurSafePage + 1} / {kleurPageCount}
+                    &nbsp;·&nbsp;
+                    {lang === 'nl'
+                      ? `${kleurFiltered.length} waarden, ${KLEUR_PAGE_SIZE} per pagina`
+                      : `${kleurFiltered.length} values, ${KLEUR_PAGE_SIZE} per page`}
+                  </span>
+                  <button className="btn btn-sm" disabled={kleurSafePage >= kleurPageCount - 1} onClick={() => setKleurPage(p => p + 1)}>›</button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Description columns */}
           <div className="card">
@@ -570,8 +752,10 @@ export default function SupplierConverter() {
           </div>
 
           <div className="actions">
-            <button className="btn" onClick={() => { setStep(1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>{t('scBack')}</button>
-            <button className="btn btn-primary" onClick={processFiles}>{t('scConvert')}</button>
+            <button className="btn" disabled={processing} onClick={() => { setStep(1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>{t('scBack')}</button>
+            <button className="btn btn-primary" disabled={processing} onClick={processFiles}>
+              {processing ? (lang === 'nl' ? 'Verwerken…' : 'Processing…') : t('scConvert')}
+            </button>
           </div>
         </>
       )}
@@ -606,7 +790,9 @@ export default function SupplierConverter() {
 
           <div className="actions">
             <button className="btn" onClick={() => { setStep(2); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>{t('scBack')}</button>
-            <button className="btn btn-download" onClick={downloadFile}>{t('scDownload')}</button>
+            <button className="btn btn-download" disabled={downloading} onClick={downloadFile}>
+              {downloading ? (lang === 'nl' ? 'Downloaden…' : 'Downloading…') : t('scDownload')}
+            </button>
           </div>
         </>
       )}
