@@ -543,9 +543,13 @@ export default function SupplierConverter() {
           {/* Color value mapping */}
           {kleurRef.col && Object.keys(kleurMapping).length > 0 && (() => {
             const allEntries = Object.entries(kleurMapping);
+            const totalModified = allEntries.filter(([k, v]) => k !== v).length;
+            const totalUnmodified = allEntries.length - totalModified;
             const filtered = kleurSearch
               ? allEntries.filter(([orig]) => orig.toLowerCase().includes(kleurSearch.toLowerCase()))
               : allEntries;
+            const filteredUnmodified = filtered.filter(([k, v]) => k === v);
+            const filteredModified = filtered.filter(([k, v]) => k !== v);
             const allFilteredSelected = filtered.length > 0 && filtered.every(([k]) => kleurSelected.includes(k));
 
             function applyBulk() {
@@ -564,9 +568,13 @@ export default function SupplierConverter() {
                 <div className="card-title">{t('Kleur')} — value mapping</div>
                 <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
                   {kleurSearch
-                    ? `${filtered.length} of ${allEntries.length} values matching "${kleurSearch}"`
-                    : `${allEntries.length} unique ${showEnglish ? 'color' : 'kleur'} values detected`
-                  }. Edit the right column to rename, or select multiple and bulk-rename.
+                    ? `${filtered.length} of ${allEntries.length} values matching "${kleurSearch}" — `
+                    : `${allEntries.length} unique ${showEnglish ? 'color' : 'kleur'} values — `
+                  }
+                  <span style={{ color: 'var(--green-dark)', fontWeight: 500 }}>{totalModified} modified</span>
+                  {', '}
+                  <span style={{ color: 'var(--text-secondary)' }}>{totalUnmodified} unmodified</span>
+                  {'. Edit the right column to rename, or select multiple and bulk-rename.'}
                 </p>
 
                 {/* Search + select-all row */}
@@ -634,40 +642,79 @@ export default function SupplierConverter() {
 
                 {/* Value rows */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 300, overflowY: 'auto' }}>
-                  {filtered.map(([original, mapped]) => (
-                    <div key={original} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <input
-                        type="checkbox"
-                        checked={kleurSelected.includes(original)}
-                        onChange={e => setKleurSelected(prev =>
-                          e.target.checked ? [...prev, original] : prev.filter(k => k !== original)
-                        )}
-                        style={{ flexShrink: 0 }}
-                      />
-                      <span style={{ flex: '0 0 200px', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {original}
-                      </span>
-                      <span style={{ fontSize: 12, color: 'var(--text-secondary)', width: 16, textAlign: 'center', flexShrink: 0 }}>→</span>
-                      <input
-                        type="text"
-                        value={mapped}
-                        onChange={e => setKleurMapping(prev => ({ ...prev, [original]: e.target.value }))}
-                        style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: `0.5px solid ${mapped !== original ? 'var(--green-dark)' : 'var(--border-md)'}`, borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }}
-                      />
-                      {mapped !== original && (
-                        <button
-                          className="btn btn-sm"
-                          style={{ padding: '1px 7px', fontSize: 11, flexShrink: 0 }}
-                          title="Reset to original"
-                          onClick={() => setKleurMapping(prev => ({ ...prev, [original]: original }))}
-                        >
-                          ↺
-                        </button>
-                      )}
-                    </div>
-                  ))}
                   {filtered.length === 0 && (
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '8px 0' }}>No values match "{kleurSearch}".</div>
+                  )}
+
+                  {filteredUnmodified.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '4px 0 2px', opacity: 0.7 }}>
+                        Unmodified ({filteredUnmodified.length})
+                      </div>
+                      {filteredUnmodified.map(([original, mapped]) => (
+                        <div key={original} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={kleurSelected.includes(original)}
+                            onChange={e => setKleurSelected(prev =>
+                              e.target.checked ? [...prev, original] : prev.filter(k => k !== original)
+                            )}
+                            style={{ flexShrink: 0 }}
+                          />
+                          <span style={{ flex: '0 0 200px', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {original}
+                          </span>
+                          <span style={{ fontSize: 12, color: 'var(--text-secondary)', width: 16, textAlign: 'center', flexShrink: 0 }}>→</span>
+                          <input
+                            type="text"
+                            value={mapped}
+                            onChange={e => setKleurMapping(prev => ({ ...prev, [original]: e.target.value }))}
+                            style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: '0.5px solid var(--border-md)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }}
+                          />
+                        </div>
+                      ))}
+                    </>
+                  )}
+
+                  {filteredModified.length > 0 && (
+                    <>
+                      {filteredUnmodified.length > 0 && (
+                        <div style={{ borderTop: '0.5px solid var(--border)', margin: '6px 0 2px' }} />
+                      )}
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green-dark)', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '2px 0 2px', opacity: 0.85 }}>
+                        Modified ({filteredModified.length})
+                      </div>
+                      {filteredModified.map(([original, mapped]) => (
+                        <div key={original} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={kleurSelected.includes(original)}
+                            onChange={e => setKleurSelected(prev =>
+                              e.target.checked ? [...prev, original] : prev.filter(k => k !== original)
+                            )}
+                            style={{ flexShrink: 0 }}
+                          />
+                          <span style={{ flex: '0 0 200px', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {original}
+                          </span>
+                          <span style={{ fontSize: 12, color: 'var(--text-secondary)', width: 16, textAlign: 'center', flexShrink: 0 }}>→</span>
+                          <input
+                            type="text"
+                            value={mapped}
+                            onChange={e => setKleurMapping(prev => ({ ...prev, [original]: e.target.value }))}
+                            style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: '0.5px solid var(--green-dark)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }}
+                          />
+                          <button
+                            className="btn btn-sm"
+                            style={{ padding: '1px 7px', fontSize: 11, flexShrink: 0 }}
+                            title="Reset to original"
+                            onClick={() => setKleurMapping(prev => ({ ...prev, [original]: original }))}
+                          >
+                            ↺
+                          </button>
+                        </div>
+                      ))}
+                    </>
                   )}
                 </div>
               </div>
