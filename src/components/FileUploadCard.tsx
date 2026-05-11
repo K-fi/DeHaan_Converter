@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { readFileRaw, sheetTo2D } from '../utils/xlsx';
 import { detectHeaderRow, parseFromHeaderRow } from '../utils/headers';
+import { useLang } from '../context/LangContext';
 import PreviewTable from './PreviewTable';
 import Banner from './Banner';
 import type { ParsedFile, BannerInfo } from '../types';
@@ -20,6 +21,8 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
   const [headerRowNum, setHeaderRowNum] = useState(1);
   const [preview, setPreview] = useState<{ cols: string[]; data: Record<string, unknown>[] } | null>(null);
 
+  const { lang, t } = useLang();
+
   const workbookRef = useRef<WorkBook | null>(null);
   const rawSheetRef = useRef<WorkSheet | null>(null);
   const fileNameRef = useRef('');
@@ -36,7 +39,9 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
     setBanner({
       type: 'success',
       icon: '✓',
-      message: `Found <strong>${initialFile.cols.length} columns</strong> and <strong>${initialFile.data.length} rows</strong>.`,
+      message: lang === 'nl'
+        ? `<strong>${initialFile.cols.length} kolommen</strong> en <strong>${initialFile.data.length} rijen</strong> gevonden.`
+        : `Found <strong>${initialFile.cols.length} columns</strong> and <strong>${initialFile.data.length} rows</strong>.`,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -54,7 +59,9 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
     setBanner({
       type: 'success',
       icon: '✓',
-      message: `Header on row <strong>${hIdx + 1}</strong>. Found <strong>${parsed.cols.length} columns</strong> and <strong>${parsed.data.length} rows</strong>.`,
+      message: lang === 'nl'
+        ? `Koptekst op rij <strong>${hIdx + 1}</strong>. <strong>${parsed.cols.length} kolommen</strong> en <strong>${parsed.data.length} rijen</strong> gevonden.`
+        : `Header on row <strong>${hIdx + 1}</strong>. Found <strong>${parsed.cols.length} columns</strong> and <strong>${parsed.data.length} rows</strong>.`,
     });
     onFileLoaded({ data: parsed.data, cols: parsed.cols, rawSheet: ws, workbook: wb, fileName: fileNameRef.current });
   }
@@ -69,7 +76,9 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
         setBanner({
           type: 'info',
           icon: '📑',
-          message: `This file has <strong>${wb.SheetNames.length} sheets</strong>. Select the tab you want to use below.`,
+          message: lang === 'nl'
+            ? `Dit bestand heeft <strong>${wb.SheetNames.length} tabbladen</strong>. Selecteer het tabblad hieronder.`
+            : `This file has <strong>${wb.SheetNames.length} sheets</strong>. Select the tab you want to use below.`,
         });
       } else {
         setSheets([]);
@@ -92,7 +101,9 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
     setBanner({
       type: 'info',
       icon: 'ℹ',
-      message: `Using row <strong>${idx + 1}</strong>. Found <strong>${parsed.cols.length} columns</strong> and <strong>${parsed.data.length} rows</strong>.`,
+      message: lang === 'nl'
+        ? `Rij <strong>${idx + 1}</strong> gebruikt. <strong>${parsed.cols.length} kolommen</strong> en <strong>${parsed.data.length} rijen</strong> gevonden.`
+        : `Using row <strong>${idx + 1}</strong>. Found <strong>${parsed.cols.length} columns</strong> and <strong>${parsed.data.length} rows</strong>.`,
     });
     onFileLoaded({ data: parsed.data, cols: parsed.cols, rawSheet: rawSheetRef.current, workbook: workbookRef.current!, fileName: fileNameRef.current });
   }
@@ -106,7 +117,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
         onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
       >
         <span className="upload-icon">{icon}</span>
-        <div className="upload-label"><strong>Click to upload</strong> or drag &amp; drop</div>
+        <div className="upload-label"><strong>{t('fuClickUpload')}</strong> {t('fuOrDrop')}</div>
         <div className="file-formats">.xlsx · .xls · .xlsm · .ods · .csv · .tsv</div>
         {uploadedName && <div className="file-name">{uploadedName}</div>}
         <input
@@ -120,7 +131,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
 
       {sheets.length > 1 && (
         <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
-          <span>📑 Sheet:</span>
+          <span>{t('fuSheetLabel')}:</span>
           <select style={{ flex: 1, fontSize: 12, padding: '5px 8px' }} onChange={(e) => handleSheetChange(e.target.value)}>
             {sheets.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
@@ -129,14 +140,14 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
 
       {uploadedName && (
         <div className="header-row-selector">
-          <span>Header on row:</span>
+          <span>{t('fuHeaderOnRow')}:</span>
           <input
             type="number"
             min="1"
             value={headerRowNum}
             onChange={(e) => setHeaderRowNum(parseInt(e.target.value, 10) || 1)}
           />
-          <button className="btn btn-sm" onClick={handleRedetect}>Apply</button>
+          <button className="btn btn-sm" onClick={handleRedetect}>{t('fuApply')}</button>
         </div>
       )}
 

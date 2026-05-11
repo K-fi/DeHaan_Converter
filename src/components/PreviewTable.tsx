@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLang } from '../context/LangContext';
 
 const PAGE_COLS = 5;
 const PAGE_ROWS = 5;
@@ -10,6 +11,7 @@ interface PreviewTableProps {
 
 export default function PreviewTable({ cols, data }: PreviewTableProps) {
   const [page, setPage] = useState(0);
+  const { lang } = useLang();
 
   useEffect(() => setPage(0), [cols]);
 
@@ -21,12 +23,14 @@ export default function PreviewTable({ cols, data }: PreviewTableProps) {
   const visCols = cols.slice(start, start + PAGE_COLS);
   const visRows = data.slice(0, PAGE_ROWS);
 
+  const infoText = lang === 'nl'
+    ? `${data.length} rijen · ${cols.length} kolommen · getoond ${start + 1}–${Math.min(start + PAGE_COLS, cols.length)}`
+    : `${data.length} rows · ${cols.length} cols · showing ${start + 1}–${Math.min(start + PAGE_COLS, cols.length)}`;
+
   return (
     <div className="preview-outer">
       <div className="preview-toolbar">
-        <span className="preview-info">
-          {data.length} rows · {cols.length} cols · showing {start + 1}–{Math.min(start + PAGE_COLS, cols.length)}
-        </span>
+        <span className="preview-info">{infoText}</span>
         {totalPages > 1 && (
           <div className="preview-pager">
             <button disabled={safePage === 0} onClick={() => setPage(p => p - 1)}>‹</button>

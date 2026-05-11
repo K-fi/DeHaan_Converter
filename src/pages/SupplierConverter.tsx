@@ -4,6 +4,8 @@ import FileUploadCard from '../components/FileUploadCard';
 import PreviewTable from '../components/PreviewTable';
 import Banner from '../components/Banner';
 import SheetPicker from '../components/SheetPicker';
+import Tooltip from '../components/Tooltip';
+import { useLang } from '../context/LangContext';
 import { findBestCol, EAN_HINTS, CODE_HINTS } from '../utils/columns';
 import { buildOutputRows, OUTPUT_COLS } from '../utils/converter';
 import { sheetTo2D, downloadXLSX } from '../utils/xlsx';
@@ -22,60 +24,15 @@ const KLEUR_HINTS         = ['kleur', 'color', 'colour'];
 const OMSCHR_HINTS        = ['omschrijving', 'omschr', 'description', 'descri', 'naam', 'name'];
 const PRODUCTNAAM_HINTS   = ['productnaam', 'productname', 'titel', 'title'];
 
-const CONVERTER_STEPS = [
-  { num: 1, label: 'Upload file' },
-  { num: 2, label: 'Map fields' },
-  { num: 3, label: 'Preview & Download' },
-];
-
 const INPUT_STYLE: React.CSSProperties = {
-  width: '100%',
-  padding: '7px 10px',
+  width: '100%', padding: '7px 10px',
   border: '0.5px solid var(--border-md)',
   borderRadius: 'var(--radius-md)' as string,
-  background: 'var(--bg)',
-  color: 'var(--text)',
-  fontSize: 13,
-  fontFamily: 'inherit',
+  background: 'var(--bg)', color: 'var(--text)',
+  fontSize: 13, fontFamily: 'inherit',
 };
 
-// ── NL → EN translations ─────────────────────────────────
-
-const EN: Record<string, string> = {
-  'Hoofdleverancier':                    'Main supplier',
-  'Btw-code: Inkoop':                    'VAT code: Purchase',
-  'Barcode':                             'Barcode',
-  'Productsoort':                        'Product type',
-  'Kostprijs':                           'Cost price',
-  'Bestelnummer leverancier':            'Supplier order number',
-  'Verkoopprijs':                        'Selling price',
-  'Maat':                                'Size',
-  'Kleur':                               'Color',
-  'Veiligheidsclassificatie':            'Safety classification',
-  'Geslacht':                            'Gender',
-  'Merk':                                'Brand',
-  'Artikelcode':                         'Article code',
-  'Omschrijving':                        'Description',
-  'Productnaam':                         'Product name',
-  'productsoort_hint':                   'Drives Article group and Unit derivation.',
-  'bestelnummer_hint':                   'Also copied to Supplier article code search field.',
-  'omschrijving_hint':                   'Select one or more columns. Values are joined and truncated to 60 characters. Extra description gets the full untruncated value.',
-  'Actief vanaf':                        'Active from',
-  'Inkoop':                              'Purchase',
-  'Ordergestuurd':                       'Order driven',
-  'Verkoop':                             'Sales',
-  'Voorraad':                            'Stock',
-  'Btw-code: Verkoop':                   'VAT code: Sales',
-  'Eenheidsfactor':                      'Unit factor',
-  'KMS Synchronisatie':                  'KMS Synchronisation',
-  '2026 Controle JW':                    '2026 Control JW',
-  'Eenheid + Inkoopeenheid':             'Unit + Purchase unit',
-  'Artikelcode Hoofdleverancier zoekveld': 'Supplier article code search field',
-  'Derived from Productsoort':           'Derived from Product type',
-  'Copy of Bestelnummer leverancier':    'Copy of Supplier order number',
-};
-
-// ── Multi-column combiner with sheet support ─────────────
+// ── Multi-column combiner ────────────────────────────────
 
 interface MultiColCombinerProps {
   sheetNames: string[];
@@ -86,28 +43,19 @@ interface MultiColCombinerProps {
   label: string;
   hint: string;
   required?: boolean;
+  tooltip?: string;
 }
 
-function MultiColCombiner({
-  sheetNames, primarySheet, getSheetCols,
-  selected, onChange, label, hint, required,
-}: MultiColCombinerProps) {
+function MultiColCombiner({ sheetNames, primarySheet, getSheetCols, selected, onChange, label, hint, required, tooltip }: MultiColCombinerProps) {
   const [activeSheet, setActiveSheet] = useState(primarySheet);
   const cols = getSheetCols(activeSheet);
   const isMultiSheet = sheetNames.length > 1;
 
-  function isChecked(col: string) {
-    return selected.some(r => r.sheet === activeSheet && r.col === col);
-  }
-
+  function isChecked(col: string) { return selected.some(r => r.sheet === activeSheet && r.col === col); }
   function toggle(col: string) {
-    if (isChecked(col)) {
-      onChange(selected.filter(r => !(r.sheet === activeSheet && r.col === col)));
-    } else {
-      onChange([...selected, { sheet: activeSheet, col }]);
-    }
+    if (isChecked(col)) onChange(selected.filter(r => !(r.sheet === activeSheet && r.col === col)));
+    else onChange([...selected, { sheet: activeSheet, col }]);
   }
-
   function move(idx: number, dir: -1 | 1) {
     const next = [...selected];
     [next[idx], next[idx + dir]] = [next[idx + dir], next[idx]];
@@ -116,15 +64,9 @@ function MultiColCombiner({
 
   return (
     <div>
-      <label className="field-label">{label}{required && ' *'}</label>
+      <label className="field-label">{label}{required && ' *'}{tooltip && <Tooltip text={tooltip} />}</label>
       <p className="field-hint" style={{ marginBottom: 6 }}>{hint}</p>
-      {isMultiSheet && (
-        <SheetPicker
-          sheetNames={sheetNames}
-          value={activeSheet}
-          onChange={s => setActiveSheet(s)}
-        />
-      )}
+      {isMultiSheet && <SheetPicker sheetNames={sheetNames} value={activeSheet} onChange={s => setActiveSheet(s)} />}
       <div className="ean-check-list">
         {cols.map(col => (
           <label key={`${activeSheet}:${col}`}>
@@ -157,50 +99,41 @@ function MultiColCombiner({
 const EMPTY_REF: ColRef = { sheet: '', col: '' };
 
 export default function SupplierConverter() {
+  const { lang, t } = useLang();
+
   const [step, setStep] = useState(1);
   const [supplFile, setSupplFile] = useState<ParsedFile | null>(null);
   const [banner, setBanner] = useState<BannerInfo | null>(null);
-  const [showEnglish, setShowEnglish] = useState(false);
 
-  // General settings
   const [hoofdleverancier, setHoofdleverancier] = useState('');
   const [btwInkoop, setBtwInkoop] = useState('3');
   const [startingCode, setStartingCode] = useState('');
 
-  // Column refs — each holds { sheet, col }
-  const [barcodeRef,               setBarcodeRef]               = useState<ColRef>(EMPTY_REF);
-  const [productsoortRef,          setProductsoortRef]          = useState<ColRef>(EMPTY_REF);
-  const [kostprijsRef,             setKostprijsRef]             = useState<ColRef>(EMPTY_REF);
-  const [bestelnummerRef,          setBestelnummerRef]          = useState<ColRef>(EMPTY_REF);
-  const [verkoopprijsRef,          setVerkoopprijsRef]          = useState<ColRef>(EMPTY_REF);
-  const [maatRef,                  setMaatRef]                  = useState<ColRef>(EMPTY_REF);
-  const [kleurRef,                 setKleurRef]                 = useState<ColRef>(EMPTY_REF);
-  const [kleurMapping,             setKleurMapping]             = useState<Record<string, string>>({});
-  const [kleurSearch,              setKleurSearch]              = useState('');
-  const [kleurSelected,            setKleurSelected]            = useState<string[]>([]);
-  const [kleurBulkValue,           setKleurBulkValue]           = useState('');
-  const [veiligheidsclassRef,      setVeiligheidsclassRef]      = useState<ColRef>(EMPTY_REF);
-  const [geslachtRef,              setGeslachtRef]              = useState<ColRef>(EMPTY_REF);
-  const [merkRef,                  setMerkRef]                  = useState<ColRef>(EMPTY_REF);
-  const [artikelcodeRef,           setArtikelcodeRef]           = useState<ColRef>(EMPTY_REF);
-  const [omschrijvingRefs,         setOmschrijvingRefs]         = useState<ColRef[]>([]);
-  const [productnaamRefs,          setProductnaamRefs]          = useState<ColRef[]>([]);
+  const [barcodeRef,          setBarcodeRef]          = useState<ColRef>(EMPTY_REF);
+  const [productsoortRef,     setProductsoortRef]     = useState<ColRef>(EMPTY_REF);
+  const [kostprijsRef,        setKostprijsRef]        = useState<ColRef>(EMPTY_REF);
+  const [bestelnummerRef,     setBestelnummerRef]     = useState<ColRef>(EMPTY_REF);
+  const [verkoopprijsRef,     setVerkoopprijsRef]     = useState<ColRef>(EMPTY_REF);
+  const [maatRef,             setMaatRef]             = useState<ColRef>(EMPTY_REF);
+  const [kleurRef,            setKleurRef]            = useState<ColRef>(EMPTY_REF);
+  const [kleurMapping,        setKleurMapping]        = useState<Record<string, string>>({});
+  const [kleurSearch,         setKleurSearch]         = useState('');
+  const [kleurSelected,       setKleurSelected]       = useState<string[]>([]);
+  const [kleurBulkValue,      setKleurBulkValue]      = useState('');
+  const [veiligheidsclassRef, setVeiligheidsclassRef] = useState<ColRef>(EMPTY_REF);
+  const [geslachtRef,         setGeslachtRef]         = useState<ColRef>(EMPTY_REF);
+  const [merkRef,             setMerkRef]             = useState<ColRef>(EMPTY_REF);
+  const [artikelcodeRef,      setArtikelcodeRef]      = useState<ColRef>(EMPTY_REF);
+  const [omschrijvingRefs,    setOmschrijvingRefs]    = useState<ColRef[]>([]);
+  const [productnaamRefs,     setProductnaamRefs]     = useState<ColRef[]>([]);
+  const [outputData,          setOutputData]          = useState<Record<string, unknown>[] | null>(null);
 
-  // Results
-  const [outputData, setOutputData] = useState<Record<string, unknown>[] | null>(null);
-
-  const autoDetRef  = useRef<Record<string, string | null>>({});
+  const autoDetRef      = useRef<Record<string, string | null>>({});
   const parsedSheetsRef = useRef<Record<string, { cols: string[]; data: Record<string, unknown>[] }>>({});
-
-  // ── Translation helper ──────────────────────────────────
-
-  function t(dutch: string) {
-    return showEnglish ? (EN[dutch] ?? dutch) : dutch;
-  }
 
   // ── Sheet helpers ────────────────────────────────────────
 
-  const sheetNames = supplFile?.workbook.SheetNames ?? [];
+  const sheetNames  = supplFile?.workbook.SheetNames ?? [];
   const primarySheet = sheetNames[0] ?? '';
 
   function getSheetInfo(sheetName: string): { cols: string[]; data: Record<string, unknown>[] } {
@@ -216,9 +149,7 @@ export default function SupplierConverter() {
     return parsed;
   }
 
-  function getSheetCols(sheetName: string): string[] {
-    return getSheetInfo(sheetName).cols;
-  }
+  function getSheetCols(sheetName: string) { return getSheetInfo(sheetName).cols; }
 
   function buildKleurMapping(ref: ColRef, existing: Record<string, string>): Record<string, string> {
     if (!ref.col) return {};
@@ -232,9 +163,7 @@ export default function SupplierConverter() {
   function handleKleurRefChange(ref: ColRef) {
     setKleurRef(ref);
     setKleurMapping(buildKleurMapping(ref, kleurMapping));
-    setKleurSearch('');
-    setKleurSelected([]);
-    setKleurBulkValue('');
+    setKleurSearch(''); setKleurSelected([]); setKleurBulkValue('');
   }
 
   // ── Navigation ──────────────────────────────────────────
@@ -242,7 +171,6 @@ export default function SupplierConverter() {
   function enterStep2() {
     const ps = supplFile!.workbook.SheetNames[0];
     parsedSheetsRef.current = {};
-
     const { cols, data } = supplFile!;
     const det: Record<string, string | null> = {
       barcode:      findBestCol(cols, data, EAN_HINTS, null),
@@ -260,7 +188,6 @@ export default function SupplierConverter() {
       productnaam:  findBestCol(cols, data, PRODUCTNAAM_HINTS, null),
     };
     autoDetRef.current = det;
-
     const mk = (key: string): ColRef => ({ sheet: ps, col: det[key] || '' });
 
     setBarcodeRef(mk('barcode'));
@@ -269,12 +196,10 @@ export default function SupplierConverter() {
     setBestelnummerRef(mk('bestelnummer'));
     setVerkoopprijsRef(mk('verkoopprijs'));
     setMaatRef(mk('maat'));
-    const kleurDetected = mk('kleur');
-    setKleurRef(kleurDetected);
-    setKleurMapping(buildKleurMapping(kleurDetected, {}));
-    setKleurSearch('');
-    setKleurSelected([]);
-    setKleurBulkValue('');
+    const kleurDet = mk('kleur');
+    setKleurRef(kleurDet);
+    setKleurMapping(buildKleurMapping(kleurDet, {}));
+    setKleurSearch(''); setKleurSelected([]); setKleurBulkValue('');
     setVeiligheidsclassRef(mk('veiligheid'));
     setGeslachtRef(mk('geslacht'));
     setMerkRef(mk('merk'));
@@ -284,30 +209,29 @@ export default function SupplierConverter() {
 
     const required = [det.barcode, det.productsoort, det.kostprijs, det.bestelnummer, det.verkoopprijs, det.maat, det.kleur];
     const detected = required.filter(Boolean).length;
+    const allOk = detected === required.length;
     setBanner({
-      type: detected === required.length ? 'success' : 'warning',
-      icon: detected === required.length ? '✓' : '⚠',
-      message: detected === required.length
-        ? `Auto-detected all ${required.length} required columns. Please verify below.`
-        : `Auto-detected ${detected} of ${required.length} required columns — highlighted fields need manual selection.`,
+      type: allOk ? 'success' : 'warning',
+      icon: allOk ? '✓' : '⚠',
+      message: allOk
+        ? t('scAutoDetAll').replace('{n}', String(required.length))
+        : t('scAutoDetPartial').replace('{det}', String(detected)).replace('{n}', String(required.length)),
     });
-
     setStep(2);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function processFiles() {
     const code = parseInt(startingCode, 10);
-    if (!hoofdleverancier.trim()) { alert('Please enter the supplier name (Hoofdleverancier).'); return; }
-    if (isNaN(code) || code < 0) { alert('Please enter a valid last used code number.'); return; }
-    if (!barcodeRef.col) { alert('Please select the Barcode column.'); return; }
-    if (!productsoortRef.col) { alert('Please select the Productsoort column.'); return; }
-    if (!maatRef.col) { alert('Please select the Maat column.'); return; }
-    if (!kleurRef.col) { alert('Please select the Kleur column.'); return; }
-    if (omschrijvingRefs.length === 0) { alert('Please select at least one column for Omschrijving.'); return; }
-    if (productnaamRefs.length === 0) { alert('Please select at least one column for Productnaam.'); return; }
+    if (!hoofdleverancier.trim()) { alert(lang === 'nl' ? 'Voer de leveranciersnaam in (Hoofdleverancier).' : 'Please enter the supplier name (Hoofdleverancier).'); return; }
+    if (isNaN(code) || code < 0) { alert(lang === 'nl' ? 'Voer een geldig codenummer in.' : 'Please enter a valid last used code number.'); return; }
+    if (!barcodeRef.col) { alert(lang === 'nl' ? 'Selecteer de Barcode-kolom.' : 'Please select the Barcode column.'); return; }
+    if (!productsoortRef.col) { alert(lang === 'nl' ? 'Selecteer de Productsoort-kolom.' : 'Please select the Productsoort column.'); return; }
+    if (!maatRef.col) { alert(lang === 'nl' ? 'Selecteer de Maat-kolom.' : 'Please select the Maat column.'); return; }
+    if (!kleurRef.col) { alert(lang === 'nl' ? 'Selecteer de Kleur-kolom.' : 'Please select the Kleur column.'); return; }
+    if (omschrijvingRefs.length === 0) { alert(lang === 'nl' ? 'Selecteer minimaal één kolom voor Omschrijving.' : 'Please select at least one column for Omschrijving.'); return; }
+    if (productnaamRefs.length === 0) { alert(lang === 'nl' ? 'Selecteer minimaal één kolom voor Productnaam.' : 'Please select at least one column for Productnaam.'); return; }
 
-    // Collect all referenced sheets and build sheetsData
     const allRefs: ColRef[] = [
       barcodeRef, productsoortRef, kostprijsRef, bestelnummerRef,
       verkoopprijsRef, veiligheidsclassRef, geslachtRef,
@@ -319,15 +243,11 @@ export default function SupplierConverter() {
     usedSheets.forEach(sn => { sheetsData[sn] = getSheetInfo(sn).data; });
 
     const rowCount = sheetsData[primarySheet]?.length ?? supplFile!.data.length;
-
     const resolve = (ref: ColRef): ColRef => ({ sheet: ref.sheet || primarySheet, col: ref.col });
 
     setOutputData(buildOutputRows({
-      sheetsData,
-      rowCount,
-      startingCode: code,
-      hoofdleverancier: hoofdleverancier.trim(),
-      btwInkoop,
+      sheetsData, rowCount, startingCode: code,
+      hoofdleverancier: hoofdleverancier.trim(), btwInkoop,
       barcodeRef:               resolve(barcodeRef),
       productsoortRef:          resolve(productsoortRef),
       kostprijsRef:             resolve(kostprijsRef),
@@ -343,7 +263,6 @@ export default function SupplierConverter() {
       omschrijvingRefs:         omschrijvingRefs.map(resolve),
       productnaamRefs:          productnaamRefs.map(resolve),
     }));
-
     setStep(3);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -366,30 +285,16 @@ export default function SupplierConverter() {
     label: string,
     ref: ColRef,
     setRef: (r: ColRef) => void,
-    opts: {
-      required?: boolean;
-      optional?: boolean;
-      defaultLabel?: string;
-      hint?: string;
-      autoKey?: string;
-    } = {},
+    opts: { required?: boolean; optional?: boolean; defaultLabel?: string; hint?: string; autoKey?: string; tooltip?: string } = {},
   ) {
-    const { required, optional, defaultLabel, hint, autoKey } = opts;
+    const { required, optional, defaultLabel, hint, autoKey, tooltip } = opts;
     const cols = getSheetCols(ref.sheet || primarySheet);
     const cls = autoKey ? selClass(autoKey, ref) : (required && !ref.col ? 'needs-review' : '');
     return (
       <div>
-        <label className="field-label">{label}{required && ' *'}</label>
-        <SheetPicker
-          sheetNames={sheetNames}
-          value={ref.sheet || primarySheet}
-          onChange={s => setRef({ sheet: s, col: '' })}
-        />
-        <select
-          value={ref.col}
-          className={cls}
-          onChange={e => setRef({ ...ref, sheet: ref.sheet || primarySheet, col: e.target.value })}
-        >
+        <label className="field-label">{label}{required && ' *'}{tooltip && <Tooltip text={tooltip} />}</label>
+        <SheetPicker sheetNames={sheetNames} value={ref.sheet || primarySheet} onChange={s => setRef({ sheet: s, col: '' })} />
+        <select value={ref.col} className={cls} onChange={e => setRef({ ...ref, sheet: ref.sheet || primarySheet, col: e.target.value })}>
           <option value="">{defaultLabel ?? (optional ? '— none —' : '— select column —')}</option>
           {cols.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
@@ -404,17 +309,23 @@ export default function SupplierConverter() {
   })();
 
   const FIXED_FIELDS = [
-    { label: t('Actief vanaf'),                        value: activiefVanaf },
-    { label: t('Inkoop'),                              value: 'Ja' },
-    { label: t('Ordergestuurd'),                       value: 'Ja' },
-    { label: t('Verkoop'),                             value: 'Ja' },
-    { label: t('Voorraad'),                            value: 'Ja' },
-    { label: t('Btw-code: Verkoop'),                   value: '2' },
-    { label: t('Eenheidsfactor'),                      value: '1' },
-    { label: t('KMS Synchronisatie'),                  value: 'Ja' },
-    { label: t('2026 Controle JW'),                    value: 'NG' },
-    { label: t('Eenheid + Inkoopeenheid'),             value: t('Derived from Productsoort') },
-    { label: t('Artikelcode Hoofdleverancier zoekveld'), value: t('Copy of Bestelnummer leverancier') },
+    { label: t('scActiviefVanaf'),   value: activiefVanaf },
+    { label: t('scInkoop'),          value: 'Ja' },
+    { label: t('scOrdergestuurd'),   value: 'Ja' },
+    { label: t('scVerkoop'),         value: 'Ja' },
+    { label: t('scVoorraad'),        value: 'Ja' },
+    { label: t('scBtwVerkoop'),      value: '2' },
+    { label: t('scEenheidsfactor'),  value: '1' },
+    { label: t('scKmsSynch'),        value: 'Ja' },
+    { label: t('scControle'),        value: 'NG' },
+    { label: t('scEenheidCombo'),    value: t('scDerivedFrom') },
+    { label: t('scArtikelcodeZoek'), value: t('scCopyOf') },
+  ];
+
+  const STEPS = [
+    { num: 1, label: t('scStep1') },
+    { num: 2, label: t('scStep2') },
+    { num: 3, label: t('scStep3') },
   ];
 
   // ── Render ───────────────────────────────────────────────
@@ -422,25 +333,18 @@ export default function SupplierConverter() {
   return (
     <div className="container">
       <header>
-        <h1>Exact Online — Supplier Data Converter</h1>
-        <p>Convert any supplier product file into the standardized Exact Online import format.</p>
+        <h1>{t('scTitle')}</h1>
+        <p>{t('scDesc')}</p>
       </header>
 
-      <Stepper step={step} onStepClick={setStep} steps={CONVERTER_STEPS} />
+      <Stepper step={step} onStepClick={setStep} steps={STEPS} />
 
       {/* ── Step 1: Upload ── */}
       {step === 1 && (
         <>
-          <FileUploadCard
-            title="Supplier product file"
-            icon="📋"
-            onFileLoaded={setSupplFile}
-            initialFile={supplFile}
-          />
+          <FileUploadCard title={lang === 'nl' ? 'Leveranciersproductbestand' : 'Supplier product file'} icon="📋" onFileLoaded={setSupplFile} initialFile={supplFile} />
           <div className="actions">
-            <button className="btn btn-primary" disabled={!supplFile} onClick={enterStep2}>
-              Continue →
-            </button>
+            <button className="btn btn-primary" disabled={!supplFile} onClick={enterStep2}>{t('btnContinue')}</button>
           </div>
         </>
       )}
@@ -448,95 +352,58 @@ export default function SupplierConverter() {
       {/* ── Step 2: Field mapping ── */}
       {step === 2 && supplFile && (
         <>
-          {/* NL / EN toggle */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-            <div style={{ display: 'flex', border: '0.5px solid var(--border-md)', borderRadius: 'var(--radius-md)', overflow: 'hidden', fontSize: 12 }}>
-              <button
-                onClick={() => setShowEnglish(false)}
-                style={{ padding: '5px 14px', background: !showEnglish ? 'var(--green-bg)' : 'var(--bg)', color: !showEnglish ? 'var(--green-text)' : 'var(--text-secondary)', fontWeight: !showEnglish ? 500 : 400, border: 'none', cursor: 'pointer', transition: 'all 0.1s' }}
-              >
-                NL
-              </button>
-              <button
-                onClick={() => setShowEnglish(true)}
-                style={{ padding: '5px 14px', background: showEnglish ? 'var(--green-bg)' : 'var(--bg)', color: showEnglish ? 'var(--green-text)' : 'var(--text-secondary)', fontWeight: showEnglish ? 500 : 400, border: 'none', borderLeft: '0.5px solid var(--border-md)', cursor: 'pointer', transition: 'all 0.1s' }}
-              >
-                EN
-              </button>
-            </div>
-          </div>
-
           {banner && <Banner {...banner} />}
 
           {/* General settings */}
           <div className="card">
-            <div className="card-title">Supplier settings</div>
+            <div className="card-title">{t('scSettingsCardTitle')}</div>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: '0.75rem', marginTop: '-0.25rem' }}>{t('scSettingsCardDesc')}</p>
             <div className="grid-3">
               <div>
-                <label className="field-label">{t('Hoofdleverancier')} *</label>
-                <input
-                  type="text"
-                  style={INPUT_STYLE}
-                  value={hoofdleverancier}
-                  placeholder="e.g. Nike"
-                  onChange={e => setHoofdleverancier(e.target.value)}
-                />
-                <p className="field-hint">Written to every row in the output.</p>
+                <label className="field-label">{t('scHoofdleverancier')} *<Tooltip text={t('ttHoofdlev')} /></label>
+                <input type="text" style={INPUT_STYLE} value={hoofdleverancier} placeholder={t('scHoofdlevPlaceholder')} onChange={e => setHoofdleverancier(e.target.value)} />
+                <p className="field-hint">{t('scHoofdlevHint')}</p>
               </div>
               <div>
-                <label className="field-label">{t('Btw-code: Inkoop')} *</label>
+                <label className="field-label">{t('scBtwInkoop')} *<Tooltip text={t('ttBtwInkoop')} /></label>
                 <select value={btwInkoop} onChange={e => setBtwInkoop(e.target.value)}>
-                  <option value="3">Holland (3)</option>
-                  <option value="9">Europe (9)</option>
-                  <option value="10">Outside Europe (10)</option>
+                  <option value="3">{t('scBtwHolland')}</option>
+                  <option value="9">{t('scBtwEurope')}</option>
+                  <option value="10">{t('scBtwOutside')}</option>
                 </select>
               </div>
               <div>
-                <label className="field-label">Last used code number *</label>
-                <input
-                  type="number"
-                  style={INPUT_STYLE}
-                  min="0"
-                  value={startingCode}
-                  placeholder="e.g. 1000"
-                  onChange={e => setStartingCode(e.target.value)}
-                />
-                <p className="field-hint">New rows are assigned this number + 1, + 2, etc.</p>
+                <label className="field-label">{t('scLastCode')} *<Tooltip text={t('ttLastCode')} /></label>
+                <input type="number" style={INPUT_STYLE} min="0" value={startingCode} placeholder={t('scLastCodePlaceholder')} onChange={e => setStartingCode(e.target.value)} />
+                <p className="field-hint">{t('scLastCodeHint')}</p>
               </div>
             </div>
           </div>
 
           {/* Column mappings */}
           <div className="card">
-            <div className="card-title">Column mappings</div>
+            <div className="card-title">{t('scMappingCardTitle')}</div>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: '0.75rem', marginTop: '-0.25rem' }}>{t('scMappingCardDesc')}</p>
             {sheetNames.length > 1 && (
-              <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-                This file has multiple sheets. Use the small sheet selector above each dropdown to pick columns from different sheets.
-              </p>
+              <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>{t('scMultiSheetNote')}</p>
             )}
             <div className="grid-3">
-              {renderField(t('Barcode'), barcodeRef, setBarcodeRef, { required: true, autoKey: 'barcode' })}
-              {renderField(t('Productsoort'), productsoortRef, setProductsoortRef, {
-                required: true, autoKey: 'productsoort',
-                hint: t('productsoort_hint') || 'Drives Artikelgroep and Eenheid derivation.',
-              })}
-              {renderField(t('Kostprijs'), kostprijsRef, setKostprijsRef, { required: true, autoKey: 'kostprijs' })}
-              {renderField(t('Bestelnummer leverancier'), bestelnummerRef, setBestelnummerRef, {
-                required: true, autoKey: 'bestelnummer',
-                hint: t('bestelnummer_hint') || 'Also copied to Artikelcode Hoofdleverancier zoekveld.',
-              })}
-              {renderField(t('Verkoopprijs'), verkoopprijsRef, setVerkoopprijsRef, { required: true, autoKey: 'verkoopprijs' })}
-              {renderField(t('Maat'), maatRef, setMaatRef, { required: true, autoKey: 'maat' })}
-              {renderField(t('Kleur'), kleurRef, handleKleurRefChange, { required: true, autoKey: 'kleur' })}
-              {renderField(t('Veiligheidsclassificatie'), veiligheidsclassRef, setVeiligheidsclassRef, { optional: true, autoKey: 'veiligheid' })}
+              {renderField(t('scBarcode'), barcodeRef, setBarcodeRef, { required: true, autoKey: 'barcode', tooltip: t('ttBarcode') })}
+              {renderField(t('scProductsoort'), productsoortRef, setProductsoortRef, { required: true, autoKey: 'productsoort', hint: t('scProductsoortHint'), tooltip: t('ttProductsoort') })}
+              {renderField(t('scKostprijs'), kostprijsRef, setKostprijsRef, { required: true, autoKey: 'kostprijs', tooltip: t('ttKostprijs') })}
+              {renderField(t('scBestelnummer'), bestelnummerRef, setBestelnummerRef, { required: true, autoKey: 'bestelnummer', hint: t('scBestelnummerHint'), tooltip: t('ttBestelnummer') })}
+              {renderField(t('scVerkoopprijs'), verkoopprijsRef, setVerkoopprijsRef, { required: true, autoKey: 'verkoopprijs', tooltip: t('ttVerkoopprijs') })}
+              {renderField(t('scMaat'), maatRef, setMaatRef, { required: true, autoKey: 'maat', tooltip: t('ttMaat') })}
+              {renderField(t('scKleur'), kleurRef, handleKleurRefChange, { required: true, autoKey: 'kleur', tooltip: t('ttKleur') })}
+              {renderField(t('scVeiligheid'), veiligheidsclassRef, setVeiligheidsclassRef, { optional: true, autoKey: 'veiligheid', tooltip: t('ttVeiligheid') })}
             </div>
 
             <hr className="divider" />
-            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>Optional columns</div>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>{t('scOptionalCols')}</div>
             <div className="grid-3">
-              {renderField(t('Geslacht'), geslachtRef, setGeslachtRef, { optional: true, defaultLabel: '— default to Unisex —', autoKey: 'geslacht' })}
-              {renderField(t('Merk'), merkRef, setMerkRef, { optional: true, autoKey: 'merk' })}
-              {renderField(t('Artikelcode'), artikelcodeRef, setArtikelcodeRef, { optional: true, autoKey: 'artikelcode' })}
+              {renderField(t('scGeslacht'), geslachtRef, setGeslachtRef, { optional: true, defaultLabel: t('scGeslachtDefault'), autoKey: 'geslacht', tooltip: t('ttGeslacht') })}
+              {renderField(t('scMerk'), merkRef, setMerkRef, { optional: true, autoKey: 'merk', tooltip: t('ttMerk') })}
+              {renderField(t('scArtikelcode'), artikelcodeRef, setArtikelcodeRef, { optional: true, autoKey: 'artikelcode', tooltip: t('ttArtikelcode') })}
             </div>
           </div>
 
@@ -549,7 +416,7 @@ export default function SupplierConverter() {
               ? allEntries.filter(([orig]) => orig.toLowerCase().includes(kleurSearch.toLowerCase()))
               : allEntries;
             const filteredUnmodified = filtered.filter(([k, v]) => k === v);
-            const filteredModified = filtered.filter(([k, v]) => k !== v);
+            const filteredModified   = filtered.filter(([k, v]) => k !== v);
             const allFilteredSelected = filtered.length > 0 && filtered.every(([k]) => kleurSelected.includes(k));
 
             function applyBulk() {
@@ -559,29 +426,34 @@ export default function SupplierConverter() {
                 kleurSelected.forEach(k => { next[k] = kleurBulkValue; });
                 return next;
               });
-              setKleurSelected([]);
-              setKleurBulkValue('');
+              setKleurSelected([]); setKleurBulkValue('');
             }
 
             return (
               <div className="card">
-                <div className="card-title">{t('Kleur')} — value mapping</div>
+                <div className="card-title">{t('scKleurMapping')}</div>
                 <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
                   {kleurSearch
-                    ? `${filtered.length} of ${allEntries.length} values matching "${kleurSearch}" — `
-                    : `${allEntries.length} unique ${showEnglish ? 'color' : 'kleur'} values — `
+                    ? (lang === 'nl'
+                        ? `${filtered.length} van ${allEntries.length} waarden komen overeen met "${kleurSearch}" — `
+                        : `${filtered.length} of ${allEntries.length} values matching "${kleurSearch}" — `)
+                    : (lang === 'nl'
+                        ? `${allEntries.length} unieke kleurwaarden — `
+                        : `${allEntries.length} unique color values — `)
                   }
-                  <span style={{ color: 'var(--green-dark)', fontWeight: 500 }}>{totalModified} modified</span>
+                  <span style={{ color: 'var(--green-dark)', fontWeight: 500 }}>{totalModified} {t('scKleurModified')}</span>
                   {', '}
-                  <span style={{ color: 'var(--text-secondary)' }}>{totalUnmodified} unmodified</span>
-                  {'. Edit the right column to rename, or select multiple and bulk-rename.'}
+                  <span style={{ color: 'var(--text-secondary)' }}>{totalUnmodified} {t('scKleurUnmodified')}</span>
+                  {lang === 'nl'
+                    ? '. Bewerk de rechterkolom om te hernoemen, of selecteer meerdere voor bulkhernoemen.'
+                    : '. Edit the right column to rename, or select multiple and bulk-rename.'}
                 </p>
 
-                {/* Search + select-all row */}
+                {/* Search + select-all */}
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
                   <input
                     type="text"
-                    placeholder="Search values…"
+                    placeholder={t('scKleurSearchPh')}
                     value={kleurSearch}
                     onChange={e => setKleurSearch(e.target.value)}
                     style={{ flex: 1, fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--border-md)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }}
@@ -592,85 +464,60 @@ export default function SupplierConverter() {
                       checked={allFilteredSelected}
                       onChange={() => {
                         const keys = filtered.map(([k]) => k);
-                        if (allFilteredSelected) {
-                          setKleurSelected(prev => prev.filter(k => !keys.includes(k)));
-                        } else {
-                          setKleurSelected(prev => [...new Set([...prev, ...keys])]);
-                        }
+                        if (allFilteredSelected) setKleurSelected(prev => prev.filter(k => !keys.includes(k)));
+                        else setKleurSelected(prev => [...new Set([...prev, ...keys])]);
                       }}
                     />
-                    Select {kleurSearch ? 'filtered' : 'all'} ({filtered.length})
+                    {kleurSearch ? t('scKleurSelectFiltered') : t('scKleurSelectAll')} ({filtered.length})
                   </label>
-                  <button
-                    className="btn btn-sm"
-                    style={{ fontSize: 11, flexShrink: 0 }}
-                    onClick={() => {
-                      setKleurMapping(Object.fromEntries(allEntries.map(([k]) => [k, k])));
-                      setKleurSelected([]);
-                      setKleurBulkValue('');
-                    }}
-                  >
-                    Reset all
+                  <button className="btn btn-sm" style={{ fontSize: 11, flexShrink: 0 }} onClick={() => { setKleurMapping(Object.fromEntries(allEntries.map(([k]) => [k, k]))); setKleurSelected([]); setKleurBulkValue(''); }}>
+                    {t('scKleurResetAll')}
                   </button>
                 </div>
 
                 {/* Bulk rename bar */}
                 {kleurSelected.length > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--bg-secondary)', border: '0.5px solid var(--border)', borderRadius: 4, marginBottom: 8 }}>
-                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', flexShrink: 0 }}>
-                      {kleurSelected.length} selected →
-                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', flexShrink: 0 }}>{kleurSelected.length} {t('scKleurSelected')}</span>
                     <input
                       type="text"
                       value={kleurBulkValue}
                       onChange={e => setKleurBulkValue(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') applyBulk(); }}
-                      placeholder="New value for all selected…"
+                      placeholder={t('scKleurNewValuePh')}
                       style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: '0.5px solid var(--border-md)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }}
                     />
-                    <button className="btn btn-sm" style={{ flexShrink: 0 }} onClick={applyBulk}>Apply</button>
-                    <button className="btn btn-sm" style={{ flexShrink: 0 }} onClick={() => { setKleurSelected([]); setKleurBulkValue(''); }}>Cancel</button>
+                    <button className="btn btn-sm" style={{ flexShrink: 0 }} onClick={applyBulk}>{t('scKleurApply')}</button>
+                    <button className="btn btn-sm" style={{ flexShrink: 0 }} onClick={() => { setKleurSelected([]); setKleurBulkValue(''); }}>{t('scKleurCancel')}</button>
                   </div>
                 )}
 
                 {/* Column headers */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, paddingLeft: 22 }}>
-                  <span style={{ flex: '0 0 200px', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>Original value</span>
+                  <span style={{ flex: '0 0 200px', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>{t('scKleurOriginal')}</span>
                   <span style={{ width: 16 }} />
-                  <span style={{ flex: 1, fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>Output value</span>
+                  <span style={{ flex: 1, fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>{t('scKleurOutput')}</span>
                 </div>
 
-                {/* Value rows */}
+                {/* Value rows grouped */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 300, overflowY: 'auto' }}>
                   {filtered.length === 0 && (
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '8px 0' }}>No values match "{kleurSearch}".</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '8px 0' }}>
+                      {t('scKleurNoMatch')} "{kleurSearch}".
+                    </div>
                   )}
 
                   {filteredUnmodified.length > 0 && (
                     <>
                       <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '4px 0 2px', opacity: 0.7 }}>
-                        Unmodified ({filteredUnmodified.length})
+                        {lang === 'nl' ? `Niet aangepast (${filteredUnmodified.length})` : `Unmodified (${filteredUnmodified.length})`}
                       </div>
                       {filteredUnmodified.map(([original, mapped]) => (
                         <div key={original} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <input
-                            type="checkbox"
-                            checked={kleurSelected.includes(original)}
-                            onChange={e => setKleurSelected(prev =>
-                              e.target.checked ? [...prev, original] : prev.filter(k => k !== original)
-                            )}
-                            style={{ flexShrink: 0 }}
-                          />
-                          <span style={{ flex: '0 0 200px', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {original}
-                          </span>
+                          <input type="checkbox" checked={kleurSelected.includes(original)} onChange={e => setKleurSelected(prev => e.target.checked ? [...prev, original] : prev.filter(k => k !== original))} style={{ flexShrink: 0 }} />
+                          <span style={{ flex: '0 0 200px', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{original}</span>
                           <span style={{ fontSize: 12, color: 'var(--text-secondary)', width: 16, textAlign: 'center', flexShrink: 0 }}>→</span>
-                          <input
-                            type="text"
-                            value={mapped}
-                            onChange={e => setKleurMapping(prev => ({ ...prev, [original]: e.target.value }))}
-                            style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: '0.5px solid var(--border-md)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }}
-                          />
+                          <input type="text" value={mapped} onChange={e => setKleurMapping(prev => ({ ...prev, [original]: e.target.value }))} style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: '0.5px solid var(--border-md)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }} />
                         </div>
                       ))}
                     </>
@@ -678,40 +525,17 @@ export default function SupplierConverter() {
 
                   {filteredModified.length > 0 && (
                     <>
-                      {filteredUnmodified.length > 0 && (
-                        <div style={{ borderTop: '0.5px solid var(--border)', margin: '6px 0 2px' }} />
-                      )}
-                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green-dark)', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '2px 0 2px', opacity: 0.85 }}>
-                        Modified ({filteredModified.length})
+                      {filteredUnmodified.length > 0 && <div style={{ borderTop: '0.5px solid var(--border)', margin: '6px 0 2px' }} />}
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green-dark)', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '2px 0', opacity: 0.85 }}>
+                        {lang === 'nl' ? `Aangepast (${filteredModified.length})` : `Modified (${filteredModified.length})`}
                       </div>
                       {filteredModified.map(([original, mapped]) => (
                         <div key={original} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <input
-                            type="checkbox"
-                            checked={kleurSelected.includes(original)}
-                            onChange={e => setKleurSelected(prev =>
-                              e.target.checked ? [...prev, original] : prev.filter(k => k !== original)
-                            )}
-                            style={{ flexShrink: 0 }}
-                          />
-                          <span style={{ flex: '0 0 200px', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {original}
-                          </span>
+                          <input type="checkbox" checked={kleurSelected.includes(original)} onChange={e => setKleurSelected(prev => e.target.checked ? [...prev, original] : prev.filter(k => k !== original))} style={{ flexShrink: 0 }} />
+                          <span style={{ flex: '0 0 200px', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{original}</span>
                           <span style={{ fontSize: 12, color: 'var(--text-secondary)', width: 16, textAlign: 'center', flexShrink: 0 }}>→</span>
-                          <input
-                            type="text"
-                            value={mapped}
-                            onChange={e => setKleurMapping(prev => ({ ...prev, [original]: e.target.value }))}
-                            style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: '0.5px solid var(--green-dark)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }}
-                          />
-                          <button
-                            className="btn btn-sm"
-                            style={{ padding: '1px 7px', fontSize: 11, flexShrink: 0 }}
-                            title="Reset to original"
-                            onClick={() => setKleurMapping(prev => ({ ...prev, [original]: original }))}
-                          >
-                            ↺
-                          </button>
+                          <input type="text" value={mapped} onChange={e => setKleurMapping(prev => ({ ...prev, [original]: e.target.value }))} style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: '0.5px solid var(--green-dark)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }} />
+                          <button className="btn btn-sm" style={{ padding: '1px 7px', fontSize: 11, flexShrink: 0 }} title="Reset" onClick={() => setKleurMapping(prev => ({ ...prev, [original]: original }))}>↺</button>
                         </div>
                       ))}
                     </>
@@ -723,41 +547,18 @@ export default function SupplierConverter() {
 
           {/* Description columns */}
           <div className="card">
-            <div className="card-title">Description columns</div>
+            <div className="card-title">{t('scDescColsCardTitle')}</div>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: '0.75rem', marginTop: '-0.25rem' }}>{t('scDescColsCardDesc')}</p>
             <div className="grid-2" style={{ alignItems: 'flex-start' }}>
-              <MultiColCombiner
-                sheetNames={sheetNames}
-                primarySheet={primarySheet}
-                getSheetCols={getSheetCols}
-                selected={omschrijvingRefs}
-                onChange={setOmschrijvingRefs}
-                label={t('Omschrijving')}
-                hint={
-                  showEnglish
-                    ? (EN['omschrijving_hint'] ?? '')
-                    : 'Select one or more columns. Values are joined and truncated to 60 characters. Extra omschrijving gets the full untruncated value.'
-                }
-                required
-              />
-              <MultiColCombiner
-                sheetNames={sheetNames}
-                primarySheet={primarySheet}
-                getSheetCols={getSheetCols}
-                selected={productnaamRefs}
-                onChange={setProductnaamRefs}
-                label={t('Productnaam')}
-                hint="Select columns to combine — typically: brand + product type + article type + safety classification code."
-                required
-              />
+              <MultiColCombiner sheetNames={sheetNames} primarySheet={primarySheet} getSheetCols={getSheetCols} selected={omschrijvingRefs} onChange={setOmschrijvingRefs} label={t('scOmschrijving')} hint={t('scOmschrijvingHint')} tooltip={t('ttOmschrijving')} required />
+              <MultiColCombiner sheetNames={sheetNames} primarySheet={primarySheet} getSheetCols={getSheetCols} selected={productnaamRefs} onChange={setProductnaamRefs} label={t('scProductnaam')} hint={t('scProductnaamHint')} tooltip={t('ttProductnaam')} required />
             </div>
           </div>
 
           {/* Fixed values */}
           <div className="card">
-            <div className="card-title">Fixed output values</div>
-            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-              These fields are set automatically — no input needed.
-            </p>
+            <div className="card-title">{t('scFixedCardTitle')}</div>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>{t('scFixedCardDesc')}</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {FIXED_FIELDS.map(f => (
                 <div key={f.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: 'var(--bg-secondary)', border: '0.5px solid var(--border)', borderRadius: 20, fontSize: 11 }}>
@@ -769,8 +570,8 @@ export default function SupplierConverter() {
           </div>
 
           <div className="actions">
-            <button className="btn" onClick={() => { setStep(1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>← Back</button>
-            <button className="btn btn-primary" onClick={processFiles}>Convert →</button>
+            <button className="btn" onClick={() => { setStep(1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>{t('scBack')}</button>
+            <button className="btn btn-primary" onClick={processFiles}>{t('scConvert')}</button>
           </div>
         </>
       )}
@@ -779,35 +580,33 @@ export default function SupplierConverter() {
       {step === 3 && outputData && (
         <>
           <div className="card">
-            <div className="card-title">Conversion complete</div>
+            <div className="card-title">{t('scConvCompleteTitle')}</div>
             <div style={{ marginBottom: '1rem' }}>
-              <span className="summary-chip">Supplier: {hoofdleverancier}</span>
-              <span className="summary-chip">Btw Inkoop: {btwInkoop}</span>
-              <span className="summary-chip">Codes from: {parseInt(startingCode, 10) + 1}</span>
+              <span className="summary-chip">{t('scChipSupplier')}: {hoofdleverancier}</span>
+              <span className="summary-chip">{t('scChipBtw')}: {btwInkoop}</span>
+              <span className="summary-chip">{t('scChipCodesFrom')}: {parseInt(startingCode, 10) + 1}</span>
             </div>
             <div className="metrics" style={{ gridTemplateColumns: 'repeat(2, minmax(0,1fr))' }}>
               <div className="metric green">
                 <div className="metric-val">{outputData.length}</div>
-                <div className="metric-lbl">rows converted</div>
+                <div className="metric-lbl">{t('scMetricConverted')}</div>
               </div>
               <div className="metric">
                 <div className="metric-val">{OUTPUT_COLS.length}</div>
-                <div className="metric-lbl">output columns</div>
+                <div className="metric-lbl">{t('scMetricCols')}</div>
               </div>
             </div>
           </div>
 
           <div className="card">
-            <div className="card-title">Output preview</div>
-            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
-              First rows in Exact Online column order — use the arrows to page through all columns.
-            </p>
+            <div className="card-title">{t('scPreviewCardTitle')}</div>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>{t('scPreviewCardDesc')}</p>
             <PreviewTable cols={[...OUTPUT_COLS]} data={outputData} />
           </div>
 
           <div className="actions">
-            <button className="btn" onClick={() => { setStep(2); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>← Back</button>
-            <button className="btn btn-download" onClick={downloadFile}>⬇ Download converted file (.xlsx)</button>
+            <button className="btn" onClick={() => { setStep(2); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>{t('scBack')}</button>
+            <button className="btn btn-download" onClick={downloadFile}>{t('scDownload')}</button>
           </div>
         </>
       )}
