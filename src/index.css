@@ -133,7 +133,7 @@ header p  { font-size: 13px; color: var(--text-secondary); }
   padding: 1.25rem;
   margin-bottom: 1rem;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 .card-title {
   font-size: 11px;
@@ -466,3 +466,60 @@ select.needs-review  { border-color: #BA7517; }
 .ean-check-list input[type="checkbox"] { flex-shrink: 0; accent-color: var(--green-mid); }
 
 .mt-1 { margin-top: 0.75rem; }
+
+/* ── Tooltip ── */
+:root {
+  --tt-bg: #1e1e1c;
+  --tt-text: #f0ede8;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --tt-bg: #f0ede8; --tt-text: #1a1a18; }
+}
+.tt {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 5px;
+  cursor: help;
+  vertical-align: middle;
+  line-height: 1;
+}
+.tt-icon {
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.6;
+  user-select: none;
+  transition: opacity 0.1s, color 0.1s;
+}
+.tt:hover .tt-icon { opacity: 1; color: var(--blue-mid); }
+.tt-box {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--tt-bg);
+  color: var(--tt-text);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  padding: 8px 11px;
+  border-radius: 7px;
+  width: 240px;
+  white-space: normal;
+  z-index: 200;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.22);
+  pointer-events: none;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.tt-box::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--tt-bg);
+}
+.tt:hover .tt-box { display: block; }

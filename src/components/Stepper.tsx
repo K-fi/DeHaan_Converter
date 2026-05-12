@@ -1,16 +1,15 @@
-const DEFAULT_STEPS = [
-  { num: 1, label: 'Upload files' },
-  { num: 2, label: 'Map columns & dates' },
-  { num: 3, label: 'Results & Download' },
-];
+'use client';
+
+import { useLang } from '../context/LangContext';
 
 interface StepperProps {
   step: number;
   onStepClick: (step: number) => void;
-  steps?: { num: number; label: string }[];
+  steps: { num: number; label: string }[];
 }
 
-export default function Stepper({ step, onStepClick, steps = DEFAULT_STEPS }: StepperProps) {
+export default function Stepper({ step, onStepClick, steps }: StepperProps) {
+  const { t } = useLang();
   return (
     <div className="stepper">
       {steps.map(s => {
@@ -22,7 +21,7 @@ export default function Stepper({ step, onStepClick, steps = DEFAULT_STEPS }: St
             className={`step${isActive ? ' active' : isDone ? ' done' : ''}`}
             onClick={() => isDone && onStepClick(s.num)}
           >
-            <span className="step-num">step {s.num}</span>
+            <span className="step-num">{t('stepWord')} {s.num}</span>
             {s.label}
           </div>
         );
