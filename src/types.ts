@@ -66,6 +66,50 @@ export interface MatchArgs {
   toValue: string;
 }
 
+export interface PriceUpdaterMappings {
+  exactEan: string;
+  exactCode: string;
+  exactPrice: string;
+  exactEanSheet: string;
+  exactCodeSheet: string;
+  exactPriceSheet: string;
+  supplEan: string;
+  supplExtraEans: string[];
+  supplCode: string;
+  supplPrice: string;
+  supplEanSheet: string;
+  supplCodeSheet: string;
+  supplPriceSheet: string;
+  priceType: string;
+}
+
+export interface SupplierConverterMappings {
+  hoofdleverancier: string;
+  btwInkoop: string;
+  barcodeRef: ColRef;
+  productsoortRef: ColRef;
+  kostprijsRef: ColRef;
+  bestelnummerRef: ColRef;
+  verkoopprijsRef: ColRef;
+  maatRef: ColRef;
+  kleurRef: ColRef;
+  kleurMapping: Record<string, string>;
+  veiligheidsclassRef: ColRef;
+  geslachtRef: ColRef;
+  merkRef: ColRef;
+  artikelcodeRef: ColRef;
+  omschrijvingRefs: ColRef[];
+  productnaamRefs: ColRef[];
+}
+
+export interface Preset {
+  id: string;
+  name: string;
+  tool: 'price_updater' | 'supplier_converter';
+  mappings: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface AutoDetected {
   eEan?: string | null;
   eCode?: string | null;

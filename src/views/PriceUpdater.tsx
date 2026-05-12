@@ -12,8 +12,10 @@ import { findBestCol, EAN_HINTS, PRICE_HINTS, CODE_HINTS, DESC_HINTS, UNIT_HINTS
 import { normalizeEan, looksLikeEan, fmtDate } from '../utils/matching';
 import { sheetTo2D, downloadXLSX, downloadCSV } from '../utils/xlsx';
 import { detectHeaderRow, parseFromHeaderRow } from '../utils/headers';
+import PresetBar from '../components/PresetBar';
 import type {
   ParsedFile, BannerInfo, MatchResults, MatchArgs, AutoDetected, DupeOccurrence, ReportRow,
+  Preset, PriceUpdaterMappings,
 } from '../types';
 
 type SheetCache = Record<string, { cols: string[]; data: Record<string, unknown>[] }>;
@@ -50,6 +52,7 @@ export default function PriceUpdater() {
   const [dupeSelections, setDupeSelections] = useState<Record<string, number>>({});
   const [processing,     setProcessing]     = useState(false);
   const [downloading,    setDownloading]    = useState(false);
+  const [presetBanner,   setPresetBanner]   = useState<BannerInfo | null>(null);
 
   const autoDetRef        = useRef<AutoDetected>({});
   const allOccurrencesRef = useRef<Record<string, DupeOccurrence[]>>({});
@@ -310,6 +313,72 @@ export default function PriceUpdater() {
     });
   }
 
+  // ── Presets ──────────────────────────────────────────────
+
+  function getMappings(): Record<string, unknown> {
+    return {
+      exactEan, exactCode, exactPrice,
+      exactEanSheet, exactCodeSheet, exactPriceSheet,
+      supplEan, supplExtraEans, supplCode, supplPrice,
+      supplEanSheet, supplCodeSheet, supplPriceSheet,
+      priceType,
+    };
+  }
+
+  function applyPreset(preset: Preset) {
+    const m = preset.mappings as unknown as PriceUpdaterMappings;
+    const eAllCols = new Set<string>([
+      ...exactFile!.cols,
+      ...Object.values(exactSheetsRef.current).flatMap(s => s.cols),
+    ]);
+    const sAllCols = new Set<string>([
+      ...supplFile!.cols,
+      ...Object.values(supplSheetsRef.current).flatMap(s => s.cols),
+    ]);
+    const checked: string[] = [];
+    const missing: string[] = [];
+
+    function tryExact(col: string, sheet: string, setCol: (v: string) => void, setSheet: (v: string) => void) {
+      if (!col) return;
+      checked.push(col);
+      if (eAllCols.has(col)) { setCol(col); setSheet(sheet || exactFile!.workbook.SheetNames[0]); }
+      else missing.push(col);
+    }
+    function trySuppl(col: string, sheet: string, setCol: (v: string) => void, setSheet: (v: string) => void) {
+      if (!col) return;
+      checked.push(col);
+      if (sAllCols.has(col)) { setCol(col); setSheet(sheet || supplFile!.workbook.SheetNames[0]); }
+      else missing.push(col);
+    }
+
+    tryExact(m.exactEan ?? '', m.exactEanSheet ?? '', setExactEan, setExactEanSheet);
+    tryExact(m.exactCode ?? '', m.exactCodeSheet ?? '', setExactCode, setExactCodeSheet);
+    tryExact(m.exactPrice ?? '', m.exactPriceSheet ?? '', setExactPrice, setExactPriceSheet);
+    trySuppl(m.supplEan ?? '', m.supplEanSheet ?? '', setSupplEan, setSupplEanSheet);
+    trySuppl(m.supplCode ?? '', m.supplCodeSheet ?? '', setSupplCode, setSupplCodeSheet);
+    trySuppl(m.supplPrice ?? '', m.supplPriceSheet ?? '', setSupplPrice, setSupplPriceSheet);
+
+    if (m.supplExtraEans?.length) {
+      const valid = m.supplExtraEans.filter((c: string) => { checked.push(c); if (sAllCols.has(c)) return true; missing.push(c); return false; });
+      setSupplExtraEans(valid);
+      setShowExtraEan(valid.length > 0);
+    } else {
+      setSupplExtraEans([]); setShowExtraEan(false);
+    }
+    if (m.priceType) setPriceType(m.priceType);
+
+    const matchCount = checked.length - missing.length;
+    const matchRate = checked.length > 0 ? matchCount / checked.length : 1;
+    const name = `<strong>${preset.name}</strong>`;
+    setPresetBanner(
+      missing.length === 0
+        ? { type: 'success', icon: '✓', message: lang === 'nl' ? `Preset ${name} geladen — alle ${checked.length} kolommen gevonden.` : `Preset ${name} loaded — all ${checked.length} columns matched.` }
+        : matchRate >= 0.5
+          ? { type: 'warning', icon: '⚠', message: lang === 'nl' ? `Preset ${name} gedeeltelijk geladen — ${matchCount}/${checked.length} kolommen gevonden. Niet gevonden: ${missing.join(', ')}.` : `Preset ${name} partially loaded — ${matchCount}/${checked.length} columns matched. Missing: ${missing.join(', ')}.` }
+          : { type: 'warning', icon: '✗', message: lang === 'nl' ? `Preset ${name} lijkt niet te passen bij dit bestand (${matchCount}/${checked.length} kolommen gevonden). Gebruikt u de juiste preset?` : `Preset ${name} doesn't seem to match this file (${matchCount}/${checked.length} columns found). Are you using the right preset?` }
+    );
+  }
+
   // ── Render ───────────────────────────────────────────────
 
   const ad = autoDetRef.current;
@@ -347,6 +416,9 @@ export default function PriceUpdater() {
       {/* ── Step 2: Column mapping ── */}
       {step === 2 && exactFile && supplFile && (
         <>
+          <PresetBar tool="price_updater" getMappings={getMappings} onLoad={applyPreset} />
+          {presetBanner && <Banner {...presetBanner} />}
+
           {/* Exact mapping */}
           <div className="card">
             <div className="card-title">{t('puExactCardTitle')}</div>
