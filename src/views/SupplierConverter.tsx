@@ -12,7 +12,8 @@ import { findBestCol, EAN_HINTS, CODE_HINTS } from '../utils/columns';
 import { buildOutputRows, OUTPUT_COLS } from '../utils/converter';
 import { sheetTo2D, downloadXLSX } from '../utils/xlsx';
 import { detectHeaderRow, parseFromHeaderRow } from '../utils/headers';
-import type { ParsedFile, BannerInfo, ColRef } from '../types';
+import PresetBar from '../components/PresetBar';
+import type { ParsedFile, BannerInfo, ColRef, Preset, SupplierConverterMappings } from '../types';
 
 const PRODUCTSOORT_HINTS  = ['productsoort', 'soort', 'type', 'categorie', 'category'];
 const KOSTPRIJS_HINTS     = ['kostprijs', 'inkoopprijs', 'cost', 'inkoop', 'purchase'];
@@ -317,6 +318,94 @@ export default function SupplierConverter() {
     setKleurSelected({}); setKleurBulkValue('');
   }
 
+  // ── Presets ──────────────────────────────────────────────
+
+  function getMappings(): Record<string, unknown> {
+    return {
+      hoofdleverancier, btwInkoop,
+      barcodeRef, productsoortRef, kostprijsRef, bestelnummerRef,
+      verkoopprijsRef, maatRef, kleurRef, kleurMapping,
+      veiligheidsclassRef, geslachtRef, merkRef, artikelcodeRef,
+      omschrijvingRefs, productnaamRefs,
+    };
+  }
+
+  function applyPreset(preset: Preset) {
+    const m = preset.mappings as unknown as SupplierConverterMappings;
+
+    const allCols = new Set<string>(supplFile!.cols);
+    sheetNames.forEach(sn => getSheetInfo(sn).cols.forEach(c => allCols.add(c)));
+
+    const checked: string[] = [];
+    const missing: string[] = [];
+
+    function tryRef(saved: ColRef | undefined, setter: (v: ColRef) => void) {
+      if (!saved?.col) return;
+      checked.push(saved.col);
+      const targetSheet = saved.sheet || primarySheet;
+      const sheetCols = getSheetInfo(targetSheet).cols;
+      if (sheetCols.includes(saved.col)) setter(saved);
+      else if (allCols.has(saved.col)) setter({ sheet: primarySheet, col: saved.col });
+      else missing.push(saved.col);
+    }
+
+    function tryRefs(saved: ColRef[] | undefined, setter: (v: ColRef[]) => void) {
+      if (!saved?.length) return;
+      const valid: ColRef[] = [];
+      saved.forEach(ref => {
+        if (!ref.col) return;
+        checked.push(ref.col);
+        const sheetCols = getSheetInfo(ref.sheet || primarySheet).cols;
+        if (sheetCols.includes(ref.col)) valid.push(ref);
+        else if (allCols.has(ref.col)) valid.push({ sheet: primarySheet, col: ref.col });
+        else missing.push(ref.col);
+      });
+      if (valid.length) setter(valid);
+    }
+
+    tryRef(m.barcodeRef, setBarcodeRef);
+    tryRef(m.productsoortRef, setProductsoortRef);
+    tryRef(m.kostprijsRef, setKostprijsRef);
+    tryRef(m.bestelnummerRef, setBestelnummerRef);
+    tryRef(m.verkoopprijsRef, setVerkoopprijsRef);
+    tryRef(m.maatRef, setMaatRef);
+    tryRef(m.veiligheidsclassRef, setVeiligheidsclassRef);
+    tryRef(m.geslachtRef, setGeslachtRef);
+    tryRef(m.merkRef, setMerkRef);
+    tryRef(m.artikelcodeRef, setArtikelcodeRef);
+    tryRefs(m.omschrijvingRefs, setOmschrijvingRefs);
+    tryRefs(m.productnaamRefs, setProductnaamRefs);
+
+    if (m.kleurRef?.col) {
+      checked.push(m.kleurRef.col);
+      const sheetCols = getSheetInfo(m.kleurRef.sheet || primarySheet).cols;
+      const newRef = sheetCols.includes(m.kleurRef.col)
+        ? m.kleurRef
+        : allCols.has(m.kleurRef.col) ? { sheet: primarySheet, col: m.kleurRef.col } : null;
+      if (newRef) {
+        setKleurRef(newRef);
+        setKleurMapping(buildKleurMapping(newRef, m.kleurMapping ?? {}));
+        setKleurSearch(''); setKleurSelected({}); setKleurBulkValue(''); setKleurPage(0);
+      } else {
+        missing.push(m.kleurRef.col);
+      }
+    }
+
+    if (m.hoofdleverancier !== undefined) setHoofdleverancier(m.hoofdleverancier);
+    if (m.btwInkoop !== undefined) setBtwInkoop(m.btwInkoop);
+
+    const matchCount = checked.length - missing.length;
+    const matchRate = checked.length > 0 ? matchCount / checked.length : 1;
+    const name = `<strong>${preset.name}</strong>`;
+    setBanner(
+      missing.length === 0
+        ? { type: 'success', icon: '✓', message: lang === 'nl' ? `Preset ${name} geladen — alle ${checked.length} kolommen gevonden.` : `Preset ${name} loaded — all ${checked.length} columns matched.` }
+        : matchRate >= 0.5
+          ? { type: 'warning', icon: '⚠', message: lang === 'nl' ? `Preset ${name} gedeeltelijk geladen — ${matchCount}/${checked.length} kolommen gevonden. Niet gevonden: ${missing.join(', ')}.` : `Preset ${name} partially loaded — ${matchCount}/${checked.length} columns matched. Missing: ${missing.join(', ')}.` }
+          : { type: 'warning', icon: '✗', message: lang === 'nl' ? `Preset ${name} lijkt niet te passen bij dit bestand (${matchCount}/${checked.length} kolommen gevonden). Gebruikt u de juiste preset?` : `Preset ${name} doesn't seem to match this file (${matchCount}/${checked.length} columns found). Are you using the right preset?` }
+    );
+  }
+
   // ── Navigation ──────────────────────────────────────────
 
   function enterStep2() {
@@ -517,6 +606,7 @@ export default function SupplierConverter() {
       {/* ── Step 2: Field mapping ── */}
       {step === 2 && supplFile && (
         <>
+          <PresetBar tool="supplier_converter" getMappings={getMappings} onLoad={applyPreset} />
           {banner && <Banner {...banner} />}
 
           {/* General settings */}
