@@ -33,6 +33,7 @@ export default function PriceUpdater() {
   const [supplEan,        setSupplEan]        = useState('');
   const [supplExtraEans,  setSupplExtraEans]  = useState<string[]>([]);
   const [showExtraEan,    setShowExtraEan]    = useState(false);
+  const [extraEanSearch,  setExtraEanSearch]  = useState('');
   const [supplCode,       setSupplCode]       = useState('');
   const [supplPrice,      setSupplPrice]      = useState('');
 
@@ -446,29 +447,29 @@ export default function PriceUpdater() {
                 <label className="field-label">
                   {t('puEanCol')} *<Tooltip text={t('ttExactEan')} />
                 </label>
-                <SheetPicker sheetNames={exactSheetNames} value={exactEanSheet} onChange={s => { setExactEanSheet(s); setExactEan(getExactSheet(s).cols[0] ?? ''); }} />
                 <select value={exactEan} className={exactEan && exactEan === ad.eEan ? 'auto-detected' : exactEan ? '' : 'needs-review'} style={fieldErrors.exactEan ? { border: '1.5px solid var(--red-text)' } : undefined} onChange={e => { setExactEan(e.target.value); setFieldErrors(p => ({ ...p, exactEan: false })); }}>
                   {getExactSheet(exactEanSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                <SheetPicker sheetNames={exactSheetNames} value={exactEanSheet} onChange={s => { setExactEanSheet(s); setExactEan(getExactSheet(s).cols[0] ?? ''); }} />
               </div>
               <div>
                 <label className="field-label">
                   {t('puArticleCode')}<Tooltip text={t('ttExactCode')} />
                 </label>
-                <SheetPicker sheetNames={exactSheetNames} value={exactCodeSheet} onChange={s => { setExactCodeSheet(s); setExactCode(''); }} />
                 <select value={exactCode} className={exactCode && exactCode === ad.eCode ? 'auto-detected' : ''} onChange={e => setExactCode(e.target.value)}>
                   <option value="">— none —</option>
                   {getExactSheet(exactCodeSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                <SheetPicker sheetNames={exactSheetNames} value={exactCodeSheet} onChange={s => { setExactCodeSheet(s); setExactCode(''); }} />
               </div>
               <div>
                 <label className="field-label">
                   {t('puPriceColUpdate')} *<Tooltip text={t('ttExactPrice')} />
                 </label>
-                <SheetPicker sheetNames={exactSheetNames} value={exactPriceSheet} onChange={s => { setExactPriceSheet(s); setExactPrice(getExactSheet(s).cols[0] ?? ''); }} />
                 <select value={exactPrice} className={exactPrice && exactPrice === ad.ePrice ? 'auto-detected' : exactPrice ? '' : 'needs-review'} style={fieldErrors.exactPrice ? { border: '1.5px solid var(--red-text)' } : undefined} onChange={e => { setExactPrice(e.target.value); setFieldErrors(p => ({ ...p, exactPrice: false })); }}>
                   {getExactSheet(exactPriceSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                <SheetPicker sheetNames={exactSheetNames} value={exactPriceSheet} onChange={s => { setExactPriceSheet(s); setExactPrice(getExactSheet(s).cols[0] ?? ''); }} />
               </div>
             </div>
             <hr className="divider" />
@@ -492,47 +493,76 @@ export default function PriceUpdater() {
                 <label className="field-label">
                   {t('puEanCol')} *<Tooltip text={t('ttSupplEan')} />
                 </label>
-                <SheetPicker sheetNames={supplSheetNames} value={supplEanSheet} onChange={s => { setSupplEanSheet(s); setSupplEan(getSupplSheet(s).cols[0] ?? ''); setSupplExtraEans([]); }} />
                 <select value={supplEan} className={supplEan && supplEan === ad.sEan ? 'auto-detected' : supplEan ? '' : 'needs-review'} style={fieldErrors.supplEan ? { border: '1.5px solid var(--red-text)' } : undefined} onChange={e => { setSupplEan(e.target.value); setFieldErrors(p => ({ ...p, supplEan: false })); }}>
                   {getSupplSheet(supplEanSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                <SheetPicker sheetNames={supplSheetNames} value={supplEanSheet} onChange={s => { setSupplEanSheet(s); setSupplEan(getSupplSheet(s).cols[0] ?? ''); setSupplExtraEans([]); }} />
                 <div style={{ marginTop: 6 }}>
-                  <button className="btn btn-sm" style={{ fontSize: 11 }} onClick={() => setShowExtraEan(v => !v)}>
+                  <button className="btn btn-sm" style={{ fontSize: 11 }} onClick={() => { setShowExtraEan(v => !v); setExtraEanSearch(''); }}>
                     {showExtraEan ? t('puRemoveEan') : t('puAddEan')}
                   </button>
                 </div>
-                {showExtraEan && (
-                  <div style={{ marginTop: 6 }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>{t('puExtraEanNote')}</div>
-                    <div className="ean-check-list">
-                      {getSupplSheet(supplEanSheet).cols.map(col => (
-                        <label key={col}>
-                          <input type="checkbox" checked={supplExtraEans.includes(col)} onChange={e => setSupplExtraEans(prev => e.target.checked ? [...prev, col] : prev.filter(c => c !== col))} />
-                          <span>{col}</span>
-                        </label>
-                      ))}
+                {showExtraEan && (() => {
+                  const eanCols = getSupplSheet(supplEanSheet).cols;
+                  const filtered = extraEanSearch.trim() ? eanCols.filter(c => c.toLowerCase().includes(extraEanSearch.toLowerCase())) : eanCols;
+                  const allChecked = filtered.length > 0 && filtered.every(c => supplExtraEans.includes(c));
+                  return (
+                    <div style={{ marginTop: 6 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>{t('puExtraEanNote')}</div>
+                      <div style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          value={extraEanSearch}
+                          onChange={e => setExtraEanSearch(e.target.value)}
+                          placeholder="Search columns…"
+                          style={{ flex: 1, fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--border-md)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }}
+                        />
+                        {filtered.length > 0 && (
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0, userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              checked={allChecked}
+                              onChange={() => {
+                                if (allChecked) setSupplExtraEans(prev => prev.filter(c => !filtered.includes(c)));
+                                else setSupplExtraEans(prev => [...new Set([...prev, ...filtered.filter(c => c !== supplEan)])]);
+                              }}
+                            />
+                            All
+                          </label>
+                        )}
+                      </div>
+                      <div className="ean-check-list">
+                        {filtered.length === 0
+                          ? <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>No columns match "{extraEanSearch}"</span>
+                          : filtered.map(col => (
+                          <label key={col}>
+                            <input type="checkbox" checked={supplExtraEans.includes(col)} onChange={e => setSupplExtraEans(prev => e.target.checked ? [...prev, col] : prev.filter(c => c !== col))} />
+                            <span>{col}</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
               <div>
                 <label className="field-label">
                   {t('puArticleCode')}<Tooltip text={t('ttSupplCode')} />
                 </label>
-                <SheetPicker sheetNames={supplSheetNames} value={supplCodeSheet} onChange={s => { setSupplCodeSheet(s); setSupplCode(''); }} />
                 <select value={supplCode} className={supplCode && supplCode === ad.sCode ? 'auto-detected' : ''} onChange={e => setSupplCode(e.target.value)}>
                   <option value="">— none —</option>
                   {getSupplSheet(supplCodeSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                <SheetPicker sheetNames={supplSheetNames} value={supplCodeSheet} onChange={s => { setSupplCodeSheet(s); setSupplCode(''); }} />
               </div>
               <div>
                 <label className="field-label">
                   {t('puNewPriceCol')} *<Tooltip text={t('ttSupplPrice')} />
                 </label>
-                <SheetPicker sheetNames={supplSheetNames} value={supplPriceSheet} onChange={s => { setSupplPriceSheet(s); setSupplPrice(getSupplSheet(s).cols[0] ?? ''); }} />
                 <select value={supplPrice} className={supplPrice && supplPrice === ad.sPrice ? 'auto-detected' : supplPrice ? '' : 'needs-review'} style={fieldErrors.supplPrice ? { border: '1.5px solid var(--red-text)' } : undefined} onChange={e => { setSupplPrice(e.target.value); setFieldErrors(p => ({ ...p, supplPrice: false })); }}>
                   {getSupplSheet(supplPriceSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                <SheetPicker sheetNames={supplSheetNames} value={supplPriceSheet} onChange={s => { setSupplPriceSheet(s); setSupplPrice(getSupplSheet(s).cols[0] ?? ''); }} />
               </div>
             </div>
           </div>

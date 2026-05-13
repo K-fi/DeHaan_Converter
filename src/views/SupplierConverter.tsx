@@ -619,12 +619,12 @@ export default function SupplierConverter() {
     return (
       <div>
         <label className="field-label">{label}{required && ' *'}{tooltip && <Tooltip text={tooltip} />}</label>
-        <SheetPicker sheetNames={sheetNames} value={ref.sheet || primarySheet} onChange={s => setRef({ sheet: s, col: '' })} />
         <select value={ref.col} className={cls} style={hasError ? { border: '1.5px solid var(--red-text)' } : undefined} onChange={e => { setRef({ ...ref, sheet: ref.sheet || primarySheet, col: e.target.value }); if (errorKey) setFieldErrors(p => ({ ...p, [errorKey]: false })); }}>
           <option value="">{defaultLabel ?? (optional ? '— none —' : '— select column —')}</option>
           {cols.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         {hint && <p className="field-hint">{hint}</p>}
+        <SheetPicker sheetNames={sheetNames} value={ref.sheet || primarySheet} onChange={s => setRef({ sheet: s, col: '' })} />
       </div>
     );
   }
