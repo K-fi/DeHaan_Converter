@@ -200,6 +200,7 @@ export default function SupplierConverter() {
   const [processing,          setProcessing]          = useState(false);
   const [downloading,         setDownloading]         = useState(false);
   const [fieldErrors,         setFieldErrors]         = useState<Record<string, boolean>>({});
+  const [codeReminder,        setCodeReminder]        = useState(false);
 
   const autoDetRef      = useRef<Record<string, string | null>>({});
   const parsedSheetsRef = useRef<Record<string, { cols: string[]; data: Record<string, unknown>[] }>>({});
@@ -334,6 +335,7 @@ export default function SupplierConverter() {
 
   function applyPreset(preset: Preset) {
     setFieldErrors({});
+    setCodeReminder(true);
     const m = preset.mappings as unknown as SupplierConverterMappings;
 
     // Eagerly parse ALL sheets so column lookup is complete
@@ -644,8 +646,13 @@ export default function SupplierConverter() {
               </div>
               <div>
                 <label className="field-label">{t('scLastCode')} *<Tooltip text={t('ttLastCode')} /></label>
-                <input type="number" style={{ ...INPUT_STYLE, ...(fieldErrors.startingCode ? { border: '1.5px solid var(--red-text)' } : {}) }} min="0" value={startingCode} placeholder={t('scLastCodePlaceholder')} onChange={e => { setStartingCode(e.target.value); setFieldErrors(p => ({ ...p, startingCode: false })); }} />
+                <input type="number" style={{ ...INPUT_STYLE, ...(fieldErrors.startingCode ? { border: '1.5px solid var(--red-text)' } : (codeReminder && !startingCode ? { border: '1.5px solid #BA7517' } : {})) }} min="0" value={startingCode} placeholder={t('scLastCodePlaceholder')} onChange={e => { setStartingCode(e.target.value); setCodeReminder(false); setFieldErrors(p => ({ ...p, startingCode: false })); }} />
                 <p className="field-hint">{t('scLastCodeHint')}</p>
+                {codeReminder && !startingCode && (
+                  <p style={{ fontSize: 11, color: '#BA7517', marginTop: 3 }}>
+                    {lang === 'nl' ? '↑ Vul het laatste gebruikte codenummer in' : '↑ Enter the last used code number'}
+                  </p>
+                )}
               </div>
             </div>
           </div>
