@@ -334,13 +334,11 @@ header p  { font-size: 13px; color: var(--text-secondary); }
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 11px;
-  width: max-content;
+  width: 100%;
+  min-width: 500px;
 }
 .preview-scroll th,
 .preview-scroll td {
-  width: 150px;
-  min-width: 150px;
-  max-width: 150px;
   padding: 5px 8px;
   border-bottom: 0.5px solid var(--border);
   white-space: nowrap;
