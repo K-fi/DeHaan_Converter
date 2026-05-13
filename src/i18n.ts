@@ -135,6 +135,16 @@ const T: Record<string, [string, string]> = {
   ttActiveFrom:   ["De datum vanaf wanneer de nieuwe prijs van kracht is. Wordt geschreven naar elke bijgewerkte rij. Leeg laten als u geen begindatum wilt instellen.", "The date from which the new price takes effect. Written into every updated row. Leave blank if you do not want to set a start date."],
   ttActiveTo:     ['De datum tot wanneer de nieuwe prijs geldig is. Leeg laten als de prijs voor onbepaalde tijd geldt.', 'The date until the new price is valid. Leave blank if the price applies indefinitely.'],
 
+  // ── PriceUpdater report tooltips ────────────────────────
+  ttMetricUpdated:  ['Aantal rijen in uw Exact-export waarbij een overeenkomend EAN of artikelcode werd gevonden en de prijs is overschreven.', 'Number of rows in your Exact export where a matching EAN or article code was found and the price was overwritten.'],
+  ttMetricTotal:    ['Totaal aantal datarijen in uw Exact-exportbestand, exclusief de koptekstrij.', 'Total number of data rows in your Exact export file, excluding the header row.'],
+  ttUnmatched:      ['Producten in uw Exact-export waarvoor geen overeenkomend EAN of artikelcode werd gevonden in het leveranciersbestand. Deze prijzen zijn ongewijzigd gelaten.', 'Products in your Exact export for which no matching EAN or article code was found in the supplier file. These prices were left unchanged.'],
+  ttDupes:          ['Dezelfde EAN komt meerdere keren voor in het leveranciersbestand, mogelijk met verschillende prijzen. Gebruik de dropdown om te kiezen welke prijs wordt gebruikt, klik daarna op "Opnieuw toepassen".', 'The same EAN appears more than once in the supplier file, possibly with different prices. Use the dropdown to pick which price to use, then click "Reapply".'],
+  ttNullSuppl:      ['Rijen in het leveranciersbestand zonder barcodewaarde. Deze rijen worden volledig overgeslagen — zonder EAN kan er geen match worden gemaakt.', 'Rows in the supplier file with no barcode value. These rows are silently skipped — without an EAN they cannot be matched against anything.'],
+  ttNullExact:      ['Rijen in uw Exact-export zonder barcodewaarde. Omdat EAN de primaire matchingsmethode is, kunnen deze rijen niet via barcode worden bijgewerkt. Als u een artikelcode-kolom hebt geselecteerd, kunnen ze via die terugval alsnog worden gevonden.', 'Rows in your Exact export with no barcode value. Since EAN is the primary matching method these rows cannot be updated by barcode. If you selected an article code column they may still be matched via that fallback.'],
+  ttScMetricConverted: ['Aantal productrijen uit het leveranciersbestand dat succesvol is omgezet naar het Exact Online-importformaat.', 'Number of product rows from the supplier file that were successfully converted to the Exact Online import format.'],
+  ttScMetricCols:      ['Het totaal aantal kolommen in het uitvoerbestand — komt exact overeen met de Exact Online-importsjabloon.', 'Total number of columns in the output file — matches the Exact Online import template exactly.'],
+
   // ── SupplierConverter ────────────────────────────────────
   scTitle:              ['Exact Online — Leverancierconverter', 'Exact Online — Supplier Data Converter'],
   scDesc:               [

@@ -573,18 +573,18 @@ export default function PriceUpdater() {
               {activeTo   && <span className="summary-chip">{t('puActiveToChip')}: {activeTo}</span>}
             </div>
             <div className="metrics">
-              <div className="metric green"><div className="metric-val">{results.updated}</div><div className="metric-lbl">{t('puMetricUpdated')}</div></div>
-              <div className="metric"><div className="metric-val">{results.total}</div><div className="metric-lbl">{t('puMetricTotal')}</div></div>
-              <div className="metric amber"><div className="metric-val">{results.unmatched.length}</div><div className="metric-lbl">{t('puMetricUnmatched')}</div></div>
-              <div className="metric amber"><div className="metric-val">{results.dupesList.length}</div><div className="metric-lbl">{t('puMetricDupes')}</div></div>
-              <div className="metric amber"><div className="metric-val">{results.nullEanData.length}</div><div className="metric-lbl">{t('puMetricNullSuppl')}</div></div>
-              <div className="metric amber"><div className="metric-val">{results.nullEanExactData.length}</div><div className="metric-lbl">{t('puMetricNullExact')}</div></div>
+              <div className="metric green"><div className="metric-val">{results.updated}</div><div className="metric-lbl"><span>{t('puMetricUpdated')}</span><Tooltip text={t('ttMetricUpdated')} /></div></div>
+              <div className="metric"><div className="metric-val">{results.total}</div><div className="metric-lbl"><span>{t('puMetricTotal')}</span><Tooltip text={t('ttMetricTotal')} /></div></div>
+              <div className="metric amber"><div className="metric-val">{results.unmatched.length}</div><div className="metric-lbl"><span>{t('puMetricUnmatched')}</span><Tooltip text={t('ttUnmatched')} /></div></div>
+              <div className="metric amber"><div className="metric-val">{results.dupesList.length}</div><div className="metric-lbl"><span>{t('puMetricDupes')}</span><Tooltip text={t('ttDupes')} /></div></div>
+              <div className="metric amber"><div className="metric-val">{results.nullEanData.length}</div><div className="metric-lbl"><span>{t('puMetricNullSuppl')}</span><Tooltip text={t('ttNullSuppl')} /></div></div>
+              <div className="metric amber"><div className="metric-val">{results.nullEanExactData.length}</div><div className="metric-lbl"><span>{t('puMetricNullExact')}</span><Tooltip text={t('ttNullExact')} /></div></div>
             </div>
 
             {/* Unmatched */}
             {results.unmatched.length > 0 && (
               <div className="table-section">
-                <div className="table-section-title">{t('puUnmatchedTitle')}</div>
+                <div className="table-section-title" style={{ display: 'flex', alignItems: 'center' }}>{t('puUnmatchedTitle')}<Tooltip text={t('ttUnmatched')} /></div>
                 <div className="table-wrap">
                   <table>
                     <thead><tr><th>{t('puColEan')}</th><th>{t('puColArticle')}</th><th>{t('puColCurrentPrice')}</th><th>{t('puColStatus')}</th></tr></thead>
@@ -606,7 +606,7 @@ export default function PriceUpdater() {
             {/* Duplicates */}
             {results.dupesList.length > 0 && (
               <div className="table-section">
-                <div className="table-section-title">{t('puDupesTitle')}</div>
+                <div className="table-section-title" style={{ display: 'flex', alignItems: 'center' }}>{t('puDupesTitle')}<Tooltip text={t('ttDupes')} /></div>
                 <div className="table-wrap">
                   <table>
                     <thead><tr><th>{t('puColEan')}</th><th>{t('puColOccurrences')}</th><th>{t('puColAllPrices')}</th><th>{t('puColUsedUpdate')}</th><th>{t('puColPriceInUse')}</th></tr></thead>
@@ -650,7 +650,7 @@ export default function PriceUpdater() {
             {/* Missing EAN — supplier */}
             {results.nullEanData.length > 0 && (
               <div className="table-section">
-                <div className="table-section-title">{t('puNullSupplTitle')}</div>
+                <div className="table-section-title" style={{ display: 'flex', alignItems: 'center' }}>{t('puNullSupplTitle')}<Tooltip text={t('ttNullSuppl')} /></div>
                 <div className="table-wrap">
                   <table>
                     <thead><tr><th>{t('puColNum')}</th>{supplCode && <th>{t('puColArticle')}</th>}{supplPrice && <th>{t('puColPrice')}</th>}<th>{t('puColStatus')}</th></tr></thead>
@@ -678,7 +678,7 @@ export default function PriceUpdater() {
             {/* Missing EAN — Exact */}
             {results.nullEanExactData.length > 0 && (
               <div className="table-section">
-                <div className="table-section-title">{t('puNullExactTitle')}</div>
+                <div className="table-section-title" style={{ display: 'flex', alignItems: 'center' }}>{t('puNullExactTitle')}<Tooltip text={t('ttNullExact')} /></div>
                 <div className="table-wrap">
                   <table>
                     <thead><tr><th>{t('puColNum')}</th>{exactCode && <th>{t('puColArticle')}</th>}<th>{t('puColCurrentPrice')}</th><th>{t('puColStatus')}</th></tr></thead>
@@ -707,21 +707,29 @@ export default function PriceUpdater() {
           {/* Updated file preview */}
           <div className="card">
             <div className="card-title">{t('puPreviewCardTitle')}</div>
-            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
-              {exactHeaderColRef.current
-                ? (lang === 'nl'
-                    ? `Eerste bijgewerkte rijen waar ${exactHeaderColRef.current} = H — gebruik de pijlen om door alle kolommen te bladeren.`
-                    : `First updated rows where ${exactHeaderColRef.current} = H — use the arrows to page through all columns.`)
-                : (lang === 'nl'
-                    ? 'Eerste 5 bijgewerkte rijen — gebruik de pijlen om door alle kolommen te bladeren.'
-                    : 'First 5 updated rows — use the arrows to page through all columns.')}
-            </p>
-            <PreviewTable
-              cols={results.resultPreviewCols}
-              data={exactHeaderColRef.current
-                ? results.resultPreviewData.filter(row => String(row[exactHeaderColRef.current] ?? '').trim() === 'H')
-                : results.resultPreviewData}
-            />
+            {results.updated === 0 ? (
+              <div style={{ padding: '2rem 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>
+                {lang === 'nl' ? 'Geen prijzen bijgewerkt — niets om te tonen.' : 'No prices were updated — nothing to preview.'}
+              </div>
+            ) : (
+              <>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                  {exactHeaderColRef.current
+                    ? (lang === 'nl'
+                        ? `Eerste bijgewerkte rijen waar ${exactHeaderColRef.current} = H — gebruik de pijlen om door alle kolommen te bladeren.`
+                        : `First updated rows where ${exactHeaderColRef.current} = H — use the arrows to page through all columns.`)
+                    : (lang === 'nl'
+                        ? 'Eerste 5 bijgewerkte rijen — gebruik de pijlen om door alle kolommen te bladeren.'
+                        : 'First 5 updated rows — use the arrows to page through all columns.')}
+                </p>
+                <PreviewTable
+                  cols={results.resultPreviewCols}
+                  data={exactHeaderColRef.current
+                    ? results.resultPreviewData.filter(row => String(row[exactHeaderColRef.current] ?? '').trim() === 'H')
+                    : results.resultPreviewData}
+                />
+              </>
+            )}
           </div>
 
           {exactHeaderColRef.current && (() => {

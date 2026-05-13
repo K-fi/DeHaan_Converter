@@ -880,11 +880,11 @@ export default function SupplierConverter() {
             <div className="metrics" style={{ gridTemplateColumns: 'repeat(2, minmax(0,1fr))' }}>
               <div className="metric green">
                 <div className="metric-val">{outputData.length}</div>
-                <div className="metric-lbl">{t('scMetricConverted')}</div>
+                <div className="metric-lbl"><span>{t('scMetricConverted')}</span><Tooltip text={t('ttScMetricConverted')} /></div>
               </div>
               <div className="metric">
                 <div className="metric-val">{OUTPUT_COLS.length}</div>
-                <div className="metric-lbl">{t('scMetricCols')}</div>
+                <div className="metric-lbl"><span>{t('scMetricCols')}</span><Tooltip text={t('ttScMetricCols')} /></div>
               </div>
             </div>
           </div>
