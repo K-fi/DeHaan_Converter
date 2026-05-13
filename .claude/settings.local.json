@@ -10,7 +10,12 @@
       "PowerShell(New-Item -ItemType Directory -Path \"c:\\\\Users\\\\ASUS\\\\Desktop\\\\Converter\\\\DeHaan_Converter_V2\\\\src\\\\app\\\\price-updater\" -Force)",
       "PowerShell(New-Item -ItemType Directory -Path \"c:\\\\Users\\\\ASUS\\\\Desktop\\\\Converter\\\\DeHaan_Converter_V2\\\\src\\\\app\\\\converter\" -Force)",
       "PowerShell(New-Item -ItemType Directory -Path \"c:\\\\Users\\\\ASUS\\\\Desktop\\\\Converter\\\\DeHaan_Converter_V2\\\\src\\\\app\\\\api\\\\health\" -Force)",
-      "PowerShell(New-Item -ItemType Directory -Path \"c:\\\\Users\\\\ASUS\\\\Desktop\\\\Converter\\\\DeHaan_Converter_V2\\\\src\\\\lib\" -Force)"
+      "PowerShell(New-Item -ItemType Directory -Path \"c:\\\\Users\\\\ASUS\\\\Desktop\\\\Converter\\\\DeHaan_Converter_V2\\\\src\\\\lib\" -Force)",
+      "Bash(git log *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(git stash *)",
+      "Bash(git push *)"
     ]
   }
 }

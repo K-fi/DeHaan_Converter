@@ -142,7 +142,7 @@ function MultiColCombiner({ sheetNames, primarySheet, getSheetCols, selected, on
   return (
     <div>
       <label className="field-label">{label}{required && ' *'}{tooltip && <Tooltip text={tooltip} />}</label>
-      <p className="field-hint" style={{ marginBottom: 6 }}>{hint}</p>
+      {hint && <p className="field-hint" style={{ marginBottom: 6 }}>{hint}</p>}
       {isMultiSheet && <SheetPicker sheetNames={sheetNames} value={activeSheet} onChange={s => { setActiveSheet(s); setSearch(''); }} />}
       <div style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
         <input
@@ -721,9 +721,9 @@ export default function SupplierConverter() {
             )}
             <div className="grid-3">
               {renderField(t('scBarcode'), barcodeRef, setBarcodeRef, { required: true, autoKey: 'barcode', tooltip: t('ttBarcode'), errorKey: 'barcodeRef' })}
-              {renderField(t('scProductsoort'), productsoortRef, setProductsoortRef, { required: true, autoKey: 'productsoort', hint: t('scProductsoortHint'), tooltip: t('ttProductsoort'), errorKey: 'productsoortRef' })}
+              {renderField(t('scProductsoort'), productsoortRef, setProductsoortRef, { required: true, autoKey: 'productsoort', tooltip: t('ttProductsoort'), errorKey: 'productsoortRef' })}
               {renderField(t('scKostprijs'), kostprijsRef, setKostprijsRef, { required: true, autoKey: 'kostprijs', tooltip: t('ttKostprijs') })}
-              {renderField(t('scBestelnummer'), bestelnummerRef, setBestelnummerRef, { required: true, autoKey: 'bestelnummer', hint: t('scBestelnummerHint'), tooltip: t('ttBestelnummer') })}
+              {renderField(t('scBestelnummer'), bestelnummerRef, setBestelnummerRef, { required: true, autoKey: 'bestelnummer', tooltip: t('ttBestelnummer') })}
               {renderField(t('scVerkoopprijs'), verkoopprijsRef, setVerkoopprijsRef, { required: true, autoKey: 'verkoopprijs', tooltip: t('ttVerkoopprijs') })}
               {renderField(t('scMaat'), maatRef, setMaatRef, { required: true, autoKey: 'maat', tooltip: t('ttMaat'), errorKey: 'maatRef' })}
               {renderField(t('scKleur'), kleurRef, handleKleurRefChange, { required: true, autoKey: 'kleur', tooltip: t('ttKleur'), errorKey: 'kleurRef' })}
@@ -901,8 +901,8 @@ export default function SupplierConverter() {
             <div className="card-title">{t('scDescColsCardTitle')}</div>
             <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: '0.75rem', marginTop: '-0.25rem' }}>{t('scDescColsCardDesc')}</p>
             <div className="grid-2" style={{ alignItems: 'flex-start' }}>
-              <MultiColCombiner sheetNames={sheetNames} primarySheet={primarySheet} getSheetCols={getSheetCols} selected={omschrijvingRefs} onChange={v => { setOmschrijvingRefs(v); setFieldErrors(p => ({ ...p, omschrijvingRefs: false })); }} label={t('scOmschrijving')} hint={t('scOmschrijvingHint')} tooltip={t('ttOmschrijving')} required hasError={!!fieldErrors.omschrijvingRefs} />
-              <MultiColCombiner sheetNames={sheetNames} primarySheet={primarySheet} getSheetCols={getSheetCols} selected={productnaamRefs} onChange={v => { setProductnaamRefs(v); setFieldErrors(p => ({ ...p, productnaamRefs: false })); }} label={t('scProductnaam')} hint={t('scProductnaamHint')} tooltip={t('ttProductnaam')} required hasError={!!fieldErrors.productnaamRefs} />
+              <MultiColCombiner sheetNames={sheetNames} primarySheet={primarySheet} getSheetCols={getSheetCols} selected={omschrijvingRefs} onChange={v => { setOmschrijvingRefs(v); setFieldErrors(p => ({ ...p, omschrijvingRefs: false })); }} label={t('scOmschrijving')} hint="" tooltip={t('ttOmschrijving')} required hasError={!!fieldErrors.omschrijvingRefs} />
+              <MultiColCombiner sheetNames={sheetNames} primarySheet={primarySheet} getSheetCols={getSheetCols} selected={productnaamRefs} onChange={v => { setProductnaamRefs(v); setFieldErrors(p => ({ ...p, productnaamRefs: false })); }} label={t('scProductnaam')} hint="" tooltip={t('ttProductnaam')} required hasError={!!fieldErrors.productnaamRefs} />
             </div>
           </div>
 
