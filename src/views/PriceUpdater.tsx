@@ -53,6 +53,7 @@ export default function PriceUpdater() {
   const [processing,     setProcessing]     = useState(false);
   const [downloading,    setDownloading]    = useState(false);
   const [presetBanner,   setPresetBanner]   = useState<BannerInfo | null>(null);
+  const [fieldErrors,    setFieldErrors]    = useState<Record<string, boolean>>({});
 
   const autoDetRef        = useRef<AutoDetected>({});
   const allOccurrencesRef = useRef<Record<string, DupeOccurrence[]>>({});
@@ -124,9 +125,13 @@ export default function PriceUpdater() {
   // ── Processing ──────────────────────────────────────────
 
   function processFiles() {
-    if (!exactEan || !exactPrice || !supplEan || !supplPrice) {
-      alert(lang === 'nl' ? 'Selecteer alle verplichte kolommen (gemarkeerd met *).' : 'Please select all required columns (marked with *).'); return;
-    }
+    const errs: Record<string, boolean> = {};
+    if (!exactEan)   errs.exactEan   = true;
+    if (!exactPrice) errs.exactPrice = true;
+    if (!supplEan)   errs.supplEan   = true;
+    if (!supplPrice) errs.supplPrice = true;
+    if (Object.keys(errs).length > 0) { setFieldErrors(errs); alert(lang === 'nl' ? 'Selecteer alle verplichte kolommen (gemarkeerd met *).' : 'Please select all required columns (marked with *).'); return; }
+    setFieldErrors({});
 
     // Capture synchronous data before deferring to setTimeout
     exactHeaderColRef.current = exactFile!.cols.find(c => c.toLowerCase() === 'header') ?? '';
@@ -326,28 +331,35 @@ export default function PriceUpdater() {
   }
 
   function applyPreset(preset: Preset) {
+    setFieldErrors({});
     const m = preset.mappings as unknown as PriceUpdaterMappings;
-    const eAllCols = new Set<string>([
-      ...exactFile!.cols,
-      ...Object.values(exactSheetsRef.current).flatMap(s => s.cols),
-    ]);
-    const sAllCols = new Set<string>([
-      ...supplFile!.cols,
-      ...Object.values(supplSheetsRef.current).flatMap(s => s.cols),
-    ]);
+
+    // Eagerly parse ALL sheets so column lookup is complete
+    const eSheets = exactFile!.workbook.SheetNames;
+    const sSheets = supplFile!.workbook.SheetNames;
+    const eAllCols = new Set<string>(exactFile!.cols);
+    eSheets.forEach(sn => getExactSheet(sn).cols.forEach(c => eAllCols.add(c)));
+    const sAllCols = new Set<string>(supplFile!.cols);
+    sSheets.forEach(sn => getSupplSheet(sn).cols.forEach(c => sAllCols.add(c)));
+
     const checked: string[] = [];
     const missing: string[] = [];
+
+    // Validate sheet exists in current workbook before applying it
+    function validSheet(sheet: string, available: string[]): string {
+      return available.includes(sheet) ? sheet : available[0];
+    }
 
     function tryExact(col: string, sheet: string, setCol: (v: string) => void, setSheet: (v: string) => void) {
       if (!col) return;
       checked.push(col);
-      if (eAllCols.has(col)) { setCol(col); setSheet(sheet || exactFile!.workbook.SheetNames[0]); }
+      if (eAllCols.has(col)) { setCol(col); setSheet(validSheet(sheet, eSheets)); }
       else missing.push(col);
     }
     function trySuppl(col: string, sheet: string, setCol: (v: string) => void, setSheet: (v: string) => void) {
       if (!col) return;
       checked.push(col);
-      if (sAllCols.has(col)) { setCol(col); setSheet(sheet || supplFile!.workbook.SheetNames[0]); }
+      if (sAllCols.has(col)) { setCol(col); setSheet(validSheet(sheet, sSheets)); }
       else missing.push(col);
     }
 
@@ -433,7 +445,7 @@ export default function PriceUpdater() {
                   {t('puEanCol')} *<Tooltip text={t('ttExactEan')} />
                 </label>
                 <SheetPicker sheetNames={exactSheetNames} value={exactEanSheet} onChange={s => { setExactEanSheet(s); setExactEan(getExactSheet(s).cols[0] ?? ''); }} />
-                <select value={exactEan} className={exactEan && exactEan === ad.eEan ? 'auto-detected' : exactEan ? '' : 'needs-review'} onChange={e => setExactEan(e.target.value)}>
+                <select value={exactEan} className={exactEan && exactEan === ad.eEan ? 'auto-detected' : exactEan ? '' : 'needs-review'} style={fieldErrors.exactEan ? { border: '1.5px solid var(--red-text)' } : undefined} onChange={e => { setExactEan(e.target.value); setFieldErrors(p => ({ ...p, exactEan: false })); }}>
                   {getExactSheet(exactEanSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
@@ -452,7 +464,7 @@ export default function PriceUpdater() {
                   {t('puPriceColUpdate')} *<Tooltip text={t('ttExactPrice')} />
                 </label>
                 <SheetPicker sheetNames={exactSheetNames} value={exactPriceSheet} onChange={s => { setExactPriceSheet(s); setExactPrice(getExactSheet(s).cols[0] ?? ''); }} />
-                <select value={exactPrice} className={exactPrice && exactPrice === ad.ePrice ? 'auto-detected' : exactPrice ? '' : 'needs-review'} onChange={e => setExactPrice(e.target.value)}>
+                <select value={exactPrice} className={exactPrice && exactPrice === ad.ePrice ? 'auto-detected' : exactPrice ? '' : 'needs-review'} style={fieldErrors.exactPrice ? { border: '1.5px solid var(--red-text)' } : undefined} onChange={e => { setExactPrice(e.target.value); setFieldErrors(p => ({ ...p, exactPrice: false })); }}>
                   {getExactSheet(exactPriceSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
@@ -479,7 +491,7 @@ export default function PriceUpdater() {
                   {t('puEanCol')} *<Tooltip text={t('ttSupplEan')} />
                 </label>
                 <SheetPicker sheetNames={supplSheetNames} value={supplEanSheet} onChange={s => { setSupplEanSheet(s); setSupplEan(getSupplSheet(s).cols[0] ?? ''); setSupplExtraEans([]); }} />
-                <select value={supplEan} className={supplEan && supplEan === ad.sEan ? 'auto-detected' : supplEan ? '' : 'needs-review'} onChange={e => setSupplEan(e.target.value)}>
+                <select value={supplEan} className={supplEan && supplEan === ad.sEan ? 'auto-detected' : supplEan ? '' : 'needs-review'} style={fieldErrors.supplEan ? { border: '1.5px solid var(--red-text)' } : undefined} onChange={e => { setSupplEan(e.target.value); setFieldErrors(p => ({ ...p, supplEan: false })); }}>
                   {getSupplSheet(supplEanSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <div style={{ marginTop: 6 }}>
@@ -516,7 +528,7 @@ export default function PriceUpdater() {
                   {t('puNewPriceCol')} *<Tooltip text={t('ttSupplPrice')} />
                 </label>
                 <SheetPicker sheetNames={supplSheetNames} value={supplPriceSheet} onChange={s => { setSupplPriceSheet(s); setSupplPrice(getSupplSheet(s).cols[0] ?? ''); }} />
-                <select value={supplPrice} className={supplPrice && supplPrice === ad.sPrice ? 'auto-detected' : supplPrice ? '' : 'needs-review'} onChange={e => setSupplPrice(e.target.value)}>
+                <select value={supplPrice} className={supplPrice && supplPrice === ad.sPrice ? 'auto-detected' : supplPrice ? '' : 'needs-review'} style={fieldErrors.supplPrice ? { border: '1.5px solid var(--red-text)' } : undefined} onChange={e => { setSupplPrice(e.target.value); setFieldErrors(p => ({ ...p, supplPrice: false })); }}>
                   {getSupplSheet(supplPriceSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
