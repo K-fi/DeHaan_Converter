@@ -1,22 +1,28 @@
 import * as XLSX from 'xlsx';
 
-export function readFileRaw(file: File, cb: (wb: XLSX.WorkBook) => void): void {
+export function readFileRaw(file: File, cb: (wb: XLSX.WorkBook) => void, onError?: () => void): void {
   const r = new FileReader();
   const isText = /\.(csv|tsv|txt)$/i.test(file.name);
   r.onload = (e: ProgressEvent<FileReader>) => {
     const result = e.target!.result;
     // Defer heavy XLSX.read so any pending loading-state paint can flush first
     setTimeout(() => {
-      const wb = isText
-        ? XLSX.read(result as string, { type: 'string', raw: false })
-        : XLSX.read(result as ArrayBuffer, { type: 'array', cellDates: true, raw: false });
-      cb(wb);
+      try {
+        const wb = isText
+          ? XLSX.read(result as string, { type: 'string', raw: false })
+          : XLSX.read(result as ArrayBuffer, { type: 'array', cellDates: true, raw: false });
+        cb(wb);
+      } catch {
+        onError?.();
+      }
     }, 0);
   };
+  r.onerror = () => onError?.();
   isText ? r.readAsText(file) : r.readAsArrayBuffer(file);
 }
 
-export function sheetTo2D(ws: XLSX.WorkSheet): unknown[][] {
+export function sheetTo2D(ws: XLSX.WorkSheet | undefined | null): unknown[][] {
+  if (!ws) return [];
   const rng = XLSX.utils.decode_range(ws['!ref'] ?? 'A1:A1');
   const rows: unknown[][] = [];
   for (let r = rng.s.r; r <= rng.e.r; r++) {

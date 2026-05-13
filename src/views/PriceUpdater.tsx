@@ -259,13 +259,15 @@ export default function PriceUpdater() {
   }
 
   function reapplyDupeSelections() {
-    const newSupplByEan: Record<string, unknown> = {};
-    Object.keys(allOccurrencesRef.current).forEach(ean => {
-      const occs = allOccurrencesRef.current[ean];
-      newSupplByEan[ean] = occs[Math.min(dupeSelections[ean] ?? 0, occs.length - 1)].price;
-    });
-    supplByEanRef.current = newSupplByEan;
-    setResults(computeMatching(newSupplByEan, supplByCodeRef.current));
+    try {
+      const newSupplByEan: Record<string, unknown> = {};
+      Object.keys(allOccurrencesRef.current).forEach(ean => {
+        const occs = allOccurrencesRef.current[ean];
+        if (occs?.length) newSupplByEan[ean] = occs[Math.min(dupeSelections[ean] ?? 0, occs.length - 1)].price;
+      });
+      supplByEanRef.current = newSupplByEan;
+      setResults(computeMatching(newSupplByEan, supplByCodeRef.current));
+    } catch { /* state already set — UI stays on last valid results */ }
   }
 
   // ── Downloads ────────────────────────────────────────────
