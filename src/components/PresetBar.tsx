@@ -19,6 +19,7 @@ export default function PresetBar({ tool, getMappings, onLoad }: PresetBarProps)
   const [saveName, setSaveName] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'update' | 'delete' | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
   const nl = lang === 'nl';
 
@@ -46,15 +47,17 @@ export default function PresetBar({ tool, getMappings, onLoad }: PresetBarProps)
       refresh();
       setMsg({ text: nl ? `Preset "${selected.name}" bijgewerkt.` : `Preset "${selected.name}" updated.`, ok: true });
     } catch (e) { setMsg({ text: (e as Error).message, ok: false }); }
+    setConfirmAction(null);
   }
 
   function handleDelete() {
     if (!selected) return;
-    if (!confirm(nl ? `Preset "${selected.name}" verwijderen?` : `Delete preset "${selected.name}"?`)) return;
+    const name = selected.name;
     deletePreset(selected.id);
     refresh();
     setSelectedId('');
-    setMsg(null);
+    setConfirmAction(null);
+    setMsg({ text: nl ? `Preset "${name}" verwijderd.` : `Preset "${name}" deleted.`, ok: true });
   }
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -87,13 +90,13 @@ export default function PresetBar({ tool, getMappings, onLoad }: PresetBarProps)
         <button className="btn btn-sm btn-primary" disabled={!selectedId || busy} onClick={() => selected && onLoad(selected)}>
           {nl ? 'Laden' : 'Load'}
         </button>
-        <button className="btn btn-sm" disabled={!selectedId || busy} onClick={handleUpdate} title={nl ? 'Overschrijf preset met huidige instellingen' : 'Overwrite preset with current settings'}>
+        <button className="btn btn-sm" disabled={!selectedId || busy} onClick={() => { setConfirmAction('update'); setShowSave(false); }} title={nl ? 'Overschrijf preset met huidige instellingen' : 'Overwrite preset with current settings'}>
           {nl ? 'Bijwerken' : 'Update'}
         </button>
-        <button className="btn btn-sm" disabled={!selectedId || busy} style={{ color: 'var(--red-text)' }} onClick={handleDelete}>
+        <button className="btn btn-sm" disabled={!selectedId || busy} style={{ color: 'var(--red-text)' }} onClick={() => { setConfirmAction('delete'); setShowSave(false); }}>
           {nl ? 'Verwijder' : 'Delete'}
         </button>
-        <button className="btn btn-sm" disabled={busy} onClick={() => { setShowSave(v => !v); setSaveName(''); }}>
+        <button className="btn btn-sm" disabled={busy} onClick={() => { setShowSave(v => !v); setSaveName(''); setConfirmAction(null); }}>
           {nl ? 'Opslaan als…' : 'Save as…'}
         </button>
         <button className="btn btn-sm" disabled={busy || presets.length === 0} onClick={() => exportPresetsFile(tool)} title={nl ? 'Download presets als JSON-bestand' : 'Download presets as JSON file'}>
@@ -120,6 +123,26 @@ export default function PresetBar({ tool, getMappings, onLoad }: PresetBarProps)
             {nl ? 'Opslaan' : 'Save'}
           </button>
           <button className="btn btn-sm" onClick={() => { setShowSave(false); setSaveName(''); }}>✕</button>
+        </div>
+      )}
+
+      {confirmAction && selected && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, padding: '7px 10px', background: confirmAction === 'delete' ? 'var(--red-bg, #fef2f2)' : 'var(--bg)', border: `0.5px solid ${confirmAction === 'delete' ? 'var(--red-text)' : 'var(--border-md)'}`, borderRadius: 'var(--radius-md)', flexWrap: 'wrap' }}>
+          <span style={{ flex: 1, fontSize: 12, color: 'var(--text)' }}>
+            {confirmAction === 'delete'
+              ? (nl ? `Preset "${selected.name}" definitief verwijderen?` : `Permanently delete preset "${selected.name}"?`)
+              : (nl ? `Preset "${selected.name}" overschrijven met huidige instellingen?` : `Overwrite preset "${selected.name}" with current settings?`)}
+          </span>
+          <button
+            className="btn btn-sm"
+            style={{ color: confirmAction === 'delete' ? 'var(--red-text)' : undefined, fontWeight: 600, flexShrink: 0 }}
+            onClick={confirmAction === 'delete' ? handleDelete : handleUpdate}
+          >
+            {nl ? 'Bevestigen' : 'Confirm'}
+          </button>
+          <button className="btn btn-sm" style={{ flexShrink: 0 }} onClick={() => setConfirmAction(null)}>
+            {nl ? 'Annuleren' : 'Cancel'}
+          </button>
         </div>
       )}
 
