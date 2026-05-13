@@ -72,24 +72,36 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
   function handleFile(file: File) {
     setParsing(true);
     fileNameRef.current = file.name;
-    readFileRaw(file, (wb) => {
-      workbookRef.current = wb;
-      const isMulti = wb.SheetNames.length > 1;
-      if (isMulti) {
-        setSheets(wb.SheetNames);
-        setBanner({
-          type: 'info',
-          icon: '📑',
-          message: lang === 'nl'
-            ? `Dit bestand heeft <strong>${wb.SheetNames.length} tabbladen</strong>. Selecteer het tabblad hieronder.`
-            : `This file has <strong>${wb.SheetNames.length} sheets</strong>. Select the tab you want to use below.`,
-        });
-      } else {
-        setSheets([]);
-      }
-      applySheet(wb, wb.SheetNames[0], isMulti);
-      setParsing(false);
-    });
+    readFileRaw(
+      file,
+      (wb) => {
+        workbookRef.current = wb;
+        if (!wb.SheetNames.length) {
+          setParsing(false);
+          setBanner({ type: 'warning', icon: '⚠', message: lang === 'nl' ? 'Dit bestand bevat geen tabbladen.' : 'This file contains no sheets.' });
+          return;
+        }
+        const isMulti = wb.SheetNames.length > 1;
+        if (isMulti) {
+          setSheets(wb.SheetNames);
+          setBanner({
+            type: 'info',
+            icon: '📑',
+            message: lang === 'nl'
+              ? `Dit bestand heeft <strong>${wb.SheetNames.length} tabbladen</strong>. Selecteer het tabblad hieronder.`
+              : `This file has <strong>${wb.SheetNames.length} sheets</strong>. Select the tab you want to use below.`,
+          });
+        } else {
+          setSheets([]);
+        }
+        applySheet(wb, wb.SheetNames[0], isMulti);
+        setParsing(false);
+      },
+      () => {
+        setParsing(false);
+        setBanner({ type: 'warning', icon: '⚠', message: lang === 'nl' ? 'Bestand kon niet worden gelezen.' : 'Could not read the file.' });
+      },
+    );
   }
 
   function handleSheetChange(sheetName: string) {

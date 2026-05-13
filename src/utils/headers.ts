@@ -13,6 +13,7 @@ export function scoreRow(row: unknown[]): number {
 }
 
 export function detectHeaderRow(rows: unknown[][]): number {
+  if (!rows.length) return 0;
   let best = 0, bs = -1;
   const lim = Math.min(rows.length, 20);
   for (let i = 0; i < lim; i++) {
@@ -27,6 +28,7 @@ export function parseFromHeaderRow(
   idx: number,
 ): { cols: string[]; data: Record<string, unknown>[] } {
   const hrow = rows[idx];
+  if (!hrow) return { cols: [], data: [] };
   const seen: Record<string, number> = {};
   const cols = hrow.map(c => {
     let n = String(c).trim() || ('Col' + Math.random().toString(36).slice(2, 5));
