@@ -115,10 +115,18 @@ interface MultiColCombinerProps {
   hasError?: boolean;
 }
 
+const COMBINE_PAGE_SIZE = 5;
+
 function MultiColCombiner({ sheetNames, primarySheet, getSheetCols, selected, onChange, label, hint, required, tooltip, hasError }: MultiColCombinerProps) {
   const [activeSheet, setActiveSheet] = useState(primarySheet);
+  const [search, setSearch] = useState('');
+  const [combinePage, setCombinePage] = useState(0);
   const cols = getSheetCols(activeSheet);
   const isMultiSheet = sheetNames.length > 1;
+
+  const filteredCols = search.trim()
+    ? cols.filter(c => c.toLowerCase().includes(search.toLowerCase()))
+    : cols;
 
   function isChecked(col: string) { return selected.some(r => r.sheet === activeSheet && r.col === col); }
   function toggle(col: string) {
@@ -135,30 +143,77 @@ function MultiColCombiner({ sheetNames, primarySheet, getSheetCols, selected, on
     <div>
       <label className="field-label">{label}{required && ' *'}{tooltip && <Tooltip text={tooltip} />}</label>
       <p className="field-hint" style={{ marginBottom: 6 }}>{hint}</p>
-      {isMultiSheet && <SheetPicker sheetNames={sheetNames} value={activeSheet} onChange={s => setActiveSheet(s)} />}
+      {isMultiSheet && <SheetPicker sheetNames={sheetNames} value={activeSheet} onChange={s => { setActiveSheet(s); setSearch(''); }} />}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search columns…"
+          style={{ flex: 1, fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--border-md)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit' }}
+        />
+        {filteredCols.length > 0 && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0, userSelect: 'none' }}>
+            <input
+              type="checkbox"
+              checked={filteredCols.every(c => isChecked(c))}
+              onChange={() => {
+                const allChecked = filteredCols.every(c => isChecked(c));
+                if (allChecked) {
+                  onChange(selected.filter(r => !(r.sheet === activeSheet && filteredCols.includes(r.col))));
+                } else {
+                  const toAdd = filteredCols.filter(c => !isChecked(c)).map(c => ({ sheet: activeSheet, col: c }));
+                  onChange([...selected, ...toAdd]);
+                }
+              }}
+            />
+            All
+          </label>
+        )}
+      </div>
       <div className="ean-check-list" style={hasError && selected.length === 0 ? { border: '1.5px solid var(--red-text)', borderRadius: 'var(--radius-md)' } : undefined}>
-        {cols.map(col => (
+        {filteredCols.length === 0
+          ? <span style={{ fontSize: 11, color: 'var(--text-secondary)', padding: '4px 0' }}>No columns match "{search}"</span>
+          : filteredCols.map(col => (
           <label key={`${activeSheet}:${col}`}>
             <input type="checkbox" checked={isChecked(col)} onChange={() => { toggle(col); }} />
             <span>{col}</span>
           </label>
         ))}
       </div>
-      {selected.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>Combine order:</div>
-          {selected.map((ref, idx) => (
-            <div key={`${ref.sheet}:${ref.col}:${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-              <span style={{ flex: 1, fontSize: 11, background: 'var(--bg-secondary)', borderRadius: 4, padding: '3px 8px', border: '0.5px solid var(--border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {idx + 1}. {isMultiSheet ? `[${ref.sheet}] ` : ''}{ref.col}
-              </span>
-              <button className="btn btn-sm" style={{ padding: '1px 7px' }} onClick={() => move(idx, -1)} disabled={idx === 0}>↑</button>
-              <button className="btn btn-sm" style={{ padding: '1px 7px' }} onClick={() => move(idx, 1)} disabled={idx === selected.length - 1}>↓</button>
-              <button className="btn btn-sm" style={{ padding: '1px 7px', color: 'var(--red-text)' }} onClick={() => onChange(selected.filter((_, i) => i !== idx))}>×</button>
+      {selected.length > 0 && (() => {
+        const totalPages = Math.ceil(selected.length / COMBINE_PAGE_SIZE);
+        const safePage = Math.min(combinePage, totalPages - 1);
+        const pageStart = safePage * COMBINE_PAGE_SIZE;
+        const pageItems = selected.slice(pageStart, pageStart + COMBINE_PAGE_SIZE);
+        return (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
+              Combine order ({selected.length}):
             </div>
-          ))}
-        </div>
-      )}
+            {pageItems.map((ref, pageIdx) => {
+              const idx = pageStart + pageIdx;
+              return (
+                <div key={`${ref.sheet}:${ref.col}:${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+                  <span style={{ flex: 1, fontSize: 11, background: 'var(--bg-secondary)', borderRadius: 4, padding: '3px 8px', border: '0.5px solid var(--border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {idx + 1}. {isMultiSheet ? `[${ref.sheet}] ` : ''}{ref.col}
+                  </span>
+                  <button className="btn btn-sm" style={{ padding: '1px 7px' }} onClick={() => move(idx, -1)} disabled={idx === 0}>↑</button>
+                  <button className="btn btn-sm" style={{ padding: '1px 7px' }} onClick={() => move(idx, 1)} disabled={idx === selected.length - 1}>↓</button>
+                  <button className="btn btn-sm" style={{ padding: '1px 7px', color: 'var(--red-text)' }} onClick={() => { onChange(selected.filter((_, i) => i !== idx)); setCombinePage(p => Math.min(p, Math.ceil((selected.length - 1) / COMBINE_PAGE_SIZE) - 1)); }}>×</button>
+                </div>
+              );
+            })}
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}>
+                <button className="btn btn-sm" style={{ padding: '1px 7px' }} disabled={safePage === 0} onClick={() => setCombinePage(p => p - 1)}>‹</button>
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{safePage + 1} / {totalPages}</span>
+                <button className="btn btn-sm" style={{ padding: '1px 7px' }} disabled={safePage >= totalPages - 1} onClick={() => setCombinePage(p => p + 1)}>›</button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
