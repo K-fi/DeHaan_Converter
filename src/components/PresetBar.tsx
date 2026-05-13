@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLang } from '../context/LangContext';
-import { listPresets, createPreset, updatePreset, deletePreset } from '../lib/presets';
+import { listPresets, createPreset, updatePreset, deletePreset, exportPresetsFile, importPresetsFile } from '../lib/presets';
 import type { Preset } from '../types';
 
 interface PresetBarProps {
@@ -18,48 +18,55 @@ export default function PresetBar({ tool, getMappings, onLoad }: PresetBarProps)
   const [showSave, setShowSave] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    listPresets(tool).then(setPresets).catch(e => setErr((e as Error).message));
-  }, [tool]);
-
-  const selected = presets.find(p => p.id === selectedId) ?? null;
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const importRef = useRef<HTMLInputElement>(null);
   const nl = lang === 'nl';
 
-  async function handleSave() {
+  useEffect(() => { setPresets(listPresets(tool)); }, [tool]);
+
+  const selected = presets.find(p => p.id === selectedId) ?? null;
+  function refresh() { setPresets(listPresets(tool)); }
+
+  function handleSave() {
     const name = saveName.trim();
     if (!name) return;
-    setBusy(true); setErr(null);
     try {
-      const saved = await createPreset(name, tool, getMappings());
-      setPresets(prev => [...prev, saved].sort((a, b) => a.name.localeCompare(b.name)));
+      const saved = createPreset(name, tool, getMappings());
+      refresh();
       setSelectedId(saved.id);
       setShowSave(false); setSaveName('');
-    } catch (e) { setErr((e as Error).message); }
-    finally { setBusy(false); }
+      setMsg({ text: nl ? `Preset "${saved.name}" opgeslagen.` : `Preset "${saved.name}" saved.`, ok: true });
+    } catch (e) { setMsg({ text: (e as Error).message, ok: false }); }
   }
 
-  async function handleUpdate() {
+  function handleUpdate() {
     if (!selected) return;
-    setBusy(true); setErr(null);
     try {
-      const updated = await updatePreset(selected.id, selected.name, getMappings());
-      setPresets(prev => prev.map(p => p.id === updated.id ? updated : p));
-    } catch (e) { setErr((e as Error).message); }
-    finally { setBusy(false); }
+      updatePreset(selected.id, selected.name, getMappings());
+      refresh();
+      setMsg({ text: nl ? `Preset "${selected.name}" bijgewerkt.` : `Preset "${selected.name}" updated.`, ok: true });
+    } catch (e) { setMsg({ text: (e as Error).message, ok: false }); }
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!selected) return;
     if (!confirm(nl ? `Preset "${selected.name}" verwijderen?` : `Delete preset "${selected.name}"?`)) return;
-    setBusy(true); setErr(null);
+    deletePreset(selected.id);
+    refresh();
+    setSelectedId('');
+    setMsg(null);
+  }
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
     try {
-      await deletePreset(selected.id);
-      setPresets(prev => prev.filter(p => p.id !== selected.id));
-      setSelectedId('');
-    } catch (e) { setErr((e as Error).message); }
-    finally { setBusy(false); }
+      const count = await importPresetsFile(file, tool);
+      refresh();
+      setMsg({ text: nl ? `${count} preset(s) geïmporteerd.` : `${count} preset(s) imported.`, ok: true });
+    } catch (e) { setMsg({ text: (e as Error).message, ok: false }); }
+    finally { setBusy(false); e.target.value = ''; }
   }
 
   return (
@@ -80,7 +87,7 @@ export default function PresetBar({ tool, getMappings, onLoad }: PresetBarProps)
         <button className="btn btn-sm btn-primary" disabled={!selectedId || busy} onClick={() => selected && onLoad(selected)}>
           {nl ? 'Laden' : 'Load'}
         </button>
-        <button className="btn btn-sm" disabled={!selectedId || busy} onClick={handleUpdate} title={nl ? 'Overschrijf deze preset met de huidige instellingen' : 'Overwrite this preset with current settings'}>
+        <button className="btn btn-sm" disabled={!selectedId || busy} onClick={handleUpdate} title={nl ? 'Overschrijf preset met huidige instellingen' : 'Overwrite preset with current settings'}>
           {nl ? 'Bijwerken' : 'Update'}
         </button>
         <button className="btn btn-sm" disabled={!selectedId || busy} style={{ color: 'var(--red-text)' }} onClick={handleDelete}>
@@ -89,6 +96,13 @@ export default function PresetBar({ tool, getMappings, onLoad }: PresetBarProps)
         <button className="btn btn-sm" disabled={busy} onClick={() => { setShowSave(v => !v); setSaveName(''); }}>
           {nl ? 'Opslaan als…' : 'Save as…'}
         </button>
+        <button className="btn btn-sm" disabled={busy || presets.length === 0} onClick={() => exportPresetsFile(tool)} title={nl ? 'Download presets als JSON-bestand' : 'Download presets as JSON file'}>
+          {nl ? 'Exporteren' : 'Export'}
+        </button>
+        <button className="btn btn-sm" disabled={busy} onClick={() => importRef.current?.click()} title={nl ? 'Laad presets uit JSON-bestand' : 'Load presets from JSON file'}>
+          {nl ? 'Importeren' : 'Import'}
+        </button>
+        <input ref={importRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
       </div>
 
       {showSave && (
@@ -103,18 +117,22 @@ export default function PresetBar({ tool, getMappings, onLoad }: PresetBarProps)
             style={{ flex: 1, fontSize: 12, padding: '5px 8px' }}
           />
           <button className="btn btn-sm btn-primary" disabled={!saveName.trim() || busy} onClick={handleSave}>
-            {busy ? '…' : nl ? 'Opslaan' : 'Save'}
+            {nl ? 'Opslaan' : 'Save'}
           </button>
           <button className="btn btn-sm" onClick={() => { setShowSave(false); setSaveName(''); }}>✕</button>
         </div>
       )}
 
-      {presets.length === 0 && !err && (
+      {presets.length === 0 && !msg && (
         <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6 }}>
           {nl ? 'Geen presets — gebruik "Opslaan als…" om de huidige kolominstellingen op te slaan.' : 'No presets yet — use "Save as…" to save the current column settings.'}
         </div>
       )}
-      {err && <div style={{ fontSize: 11, color: 'var(--red-text)', marginTop: 4 }}>⚠ {err}</div>}
+      {msg && (
+        <div style={{ fontSize: 11, color: msg.ok ? 'var(--green-text)' : 'var(--red-text)', marginTop: 4 }}>
+          {msg.ok ? '✓' : '⚠'} {msg.text}
+        </div>
+      )}
     </div>
   );
 }

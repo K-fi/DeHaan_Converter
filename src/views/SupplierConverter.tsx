@@ -112,9 +112,10 @@ interface MultiColCombinerProps {
   hint: string;
   required?: boolean;
   tooltip?: string;
+  hasError?: boolean;
 }
 
-function MultiColCombiner({ sheetNames, primarySheet, getSheetCols, selected, onChange, label, hint, required, tooltip }: MultiColCombinerProps) {
+function MultiColCombiner({ sheetNames, primarySheet, getSheetCols, selected, onChange, label, hint, required, tooltip, hasError }: MultiColCombinerProps) {
   const [activeSheet, setActiveSheet] = useState(primarySheet);
   const cols = getSheetCols(activeSheet);
   const isMultiSheet = sheetNames.length > 1;
@@ -135,10 +136,10 @@ function MultiColCombiner({ sheetNames, primarySheet, getSheetCols, selected, on
       <label className="field-label">{label}{required && ' *'}{tooltip && <Tooltip text={tooltip} />}</label>
       <p className="field-hint" style={{ marginBottom: 6 }}>{hint}</p>
       {isMultiSheet && <SheetPicker sheetNames={sheetNames} value={activeSheet} onChange={s => setActiveSheet(s)} />}
-      <div className="ean-check-list">
+      <div className="ean-check-list" style={hasError && selected.length === 0 ? { border: '1.5px solid var(--red-text)', borderRadius: 'var(--radius-md)' } : undefined}>
         {cols.map(col => (
           <label key={`${activeSheet}:${col}`}>
-            <input type="checkbox" checked={isChecked(col)} onChange={() => toggle(col)} />
+            <input type="checkbox" checked={isChecked(col)} onChange={() => { toggle(col); }} />
             <span>{col}</span>
           </label>
         ))}
@@ -198,6 +199,7 @@ export default function SupplierConverter() {
   const [outputData,          setOutputData]          = useState<Record<string, unknown>[] | null>(null);
   const [processing,          setProcessing]          = useState(false);
   const [downloading,         setDownloading]         = useState(false);
+  const [fieldErrors,         setFieldErrors]         = useState<Record<string, boolean>>({});
 
   const autoDetRef      = useRef<Record<string, string | null>>({});
   const parsedSheetsRef = useRef<Record<string, { cols: string[]; data: Record<string, unknown>[] }>>({});
@@ -331,20 +333,27 @@ export default function SupplierConverter() {
   }
 
   function applyPreset(preset: Preset) {
+    setFieldErrors({});
     const m = preset.mappings as unknown as SupplierConverterMappings;
 
+    // Eagerly parse ALL sheets so column lookup is complete
     const allCols = new Set<string>(supplFile!.cols);
     sheetNames.forEach(sn => getSheetInfo(sn).cols.forEach(c => allCols.add(c)));
 
     const checked: string[] = [];
     const missing: string[] = [];
 
+    // Validate sheet exists in current file before applying it
+    function validSheet(sheet: string): string {
+      return sheetNames.includes(sheet) ? sheet : primarySheet;
+    }
+
     function tryRef(saved: ColRef | undefined, setter: (v: ColRef) => void) {
       if (!saved?.col) return;
       checked.push(saved.col);
-      const targetSheet = saved.sheet || primarySheet;
+      const targetSheet = validSheet(saved.sheet);
       const sheetCols = getSheetInfo(targetSheet).cols;
-      if (sheetCols.includes(saved.col)) setter(saved);
+      if (sheetCols.includes(saved.col)) setter({ sheet: targetSheet, col: saved.col });
       else if (allCols.has(saved.col)) setter({ sheet: primarySheet, col: saved.col });
       else missing.push(saved.col);
     }
@@ -355,8 +364,9 @@ export default function SupplierConverter() {
       saved.forEach(ref => {
         if (!ref.col) return;
         checked.push(ref.col);
-        const sheetCols = getSheetInfo(ref.sheet || primarySheet).cols;
-        if (sheetCols.includes(ref.col)) valid.push(ref);
+        const targetSheet = validSheet(ref.sheet);
+        const sheetCols = getSheetInfo(targetSheet).cols;
+        if (sheetCols.includes(ref.col)) valid.push({ sheet: targetSheet, col: ref.col });
         else if (allCols.has(ref.col)) valid.push({ sheet: primarySheet, col: ref.col });
         else missing.push(ref.col);
       });
@@ -378,9 +388,10 @@ export default function SupplierConverter() {
 
     if (m.kleurRef?.col) {
       checked.push(m.kleurRef.col);
-      const sheetCols = getSheetInfo(m.kleurRef.sheet || primarySheet).cols;
+      const targetSheet = validSheet(m.kleurRef.sheet);
+      const sheetCols = getSheetInfo(targetSheet).cols;
       const newRef = sheetCols.includes(m.kleurRef.col)
-        ? m.kleurRef
+        ? { sheet: targetSheet, col: m.kleurRef.col }
         : allCols.has(m.kleurRef.col) ? { sheet: primarySheet, col: m.kleurRef.col } : null;
       if (newRef) {
         setKleurRef(newRef);
@@ -463,14 +474,17 @@ export default function SupplierConverter() {
 
   function processFiles() {
     const code = parseInt(startingCode, 10);
-    if (!hoofdleverancier.trim()) { alert(lang === 'nl' ? 'Voer de leveranciersnaam in (Hoofdleverancier).' : 'Please enter the supplier name (Hoofdleverancier).'); return; }
-    if (isNaN(code) || code < 0) { alert(lang === 'nl' ? 'Voer een geldig codenummer in.' : 'Please enter a valid last used code number.'); return; }
-    if (!barcodeRef.col) { alert(lang === 'nl' ? 'Selecteer de Barcode-kolom.' : 'Please select the Barcode column.'); return; }
-    if (!productsoortRef.col) { alert(lang === 'nl' ? 'Selecteer de Productsoort-kolom.' : 'Please select the Productsoort column.'); return; }
-    if (!maatRef.col) { alert(lang === 'nl' ? 'Selecteer de Maat-kolom.' : 'Please select the Maat column.'); return; }
-    if (!kleurRef.col) { alert(lang === 'nl' ? 'Selecteer de Kleur-kolom.' : 'Please select the Kleur column.'); return; }
-    if (omschrijvingRefs.length === 0) { alert(lang === 'nl' ? 'Selecteer minimaal één kolom voor Omschrijving.' : 'Please select at least one column for Omschrijving.'); return; }
-    if (productnaamRefs.length === 0) { alert(lang === 'nl' ? 'Selecteer minimaal één kolom voor Productnaam.' : 'Please select at least one column for Productnaam.'); return; }
+    const errs: Record<string, boolean> = {};
+    if (!hoofdleverancier.trim())      errs.hoofdleverancier = true;
+    if (isNaN(code) || code < 0)       errs.startingCode     = true;
+    if (!barcodeRef.col)               errs.barcodeRef       = true;
+    if (!productsoortRef.col)          errs.productsoortRef  = true;
+    if (!maatRef.col)                  errs.maatRef          = true;
+    if (!kleurRef.col)                 errs.kleurRef         = true;
+    if (omschrijvingRefs.length === 0) errs.omschrijvingRefs = true;
+    if (productnaamRefs.length === 0)  errs.productnaamRefs  = true;
+    if (Object.keys(errs).length > 0) { setFieldErrors(errs); alert(lang === 'nl' ? 'Vul alle verplichte velden in (gemarkeerd met *).' : 'Please fill in all required fields (marked with *).'); return; }
+    setFieldErrors({});
 
     const allRefs: ColRef[] = [
       barcodeRef, productsoortRef, kostprijsRef, bestelnummerRef,
@@ -539,16 +553,17 @@ export default function SupplierConverter() {
     label: string,
     ref: ColRef,
     setRef: (r: ColRef) => void,
-    opts: { required?: boolean; optional?: boolean; defaultLabel?: string; hint?: string; autoKey?: string; tooltip?: string } = {},
+    opts: { required?: boolean; optional?: boolean; defaultLabel?: string; hint?: string; autoKey?: string; tooltip?: string; errorKey?: string } = {},
   ) {
-    const { required, optional, defaultLabel, hint, autoKey, tooltip } = opts;
+    const { required, optional, defaultLabel, hint, autoKey, tooltip, errorKey } = opts;
     const cols = getSheetCols(ref.sheet || primarySheet);
+    const hasError = errorKey ? !!fieldErrors[errorKey] : false;
     const cls = autoKey ? selClass(autoKey, ref) : (required && !ref.col ? 'needs-review' : '');
     return (
       <div>
         <label className="field-label">{label}{required && ' *'}{tooltip && <Tooltip text={tooltip} />}</label>
         <SheetPicker sheetNames={sheetNames} value={ref.sheet || primarySheet} onChange={s => setRef({ sheet: s, col: '' })} />
-        <select value={ref.col} className={cls} onChange={e => setRef({ ...ref, sheet: ref.sheet || primarySheet, col: e.target.value })}>
+        <select value={ref.col} className={cls} style={hasError ? { border: '1.5px solid var(--red-text)' } : undefined} onChange={e => { setRef({ ...ref, sheet: ref.sheet || primarySheet, col: e.target.value }); if (errorKey) setFieldErrors(p => ({ ...p, [errorKey]: false })); }}>
           <option value="">{defaultLabel ?? (optional ? '— none —' : '— select column —')}</option>
           {cols.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
@@ -616,7 +631,7 @@ export default function SupplierConverter() {
             <div className="grid-3">
               <div>
                 <label className="field-label">{t('scHoofdleverancier')} *<Tooltip text={t('ttHoofdlev')} /></label>
-                <input type="text" style={INPUT_STYLE} value={hoofdleverancier} placeholder={t('scHoofdlevPlaceholder')} onChange={e => setHoofdleverancier(e.target.value)} />
+                <input type="text" style={{ ...INPUT_STYLE, ...(fieldErrors.hoofdleverancier ? { border: '1.5px solid var(--red-text)' } : {}) }} value={hoofdleverancier} placeholder={t('scHoofdlevPlaceholder')} onChange={e => { setHoofdleverancier(e.target.value); setFieldErrors(p => ({ ...p, hoofdleverancier: false })); }} />
                 <p className="field-hint">{t('scHoofdlevHint')}</p>
               </div>
               <div>
@@ -629,7 +644,7 @@ export default function SupplierConverter() {
               </div>
               <div>
                 <label className="field-label">{t('scLastCode')} *<Tooltip text={t('ttLastCode')} /></label>
-                <input type="number" style={INPUT_STYLE} min="0" value={startingCode} placeholder={t('scLastCodePlaceholder')} onChange={e => setStartingCode(e.target.value)} />
+                <input type="number" style={{ ...INPUT_STYLE, ...(fieldErrors.startingCode ? { border: '1.5px solid var(--red-text)' } : {}) }} min="0" value={startingCode} placeholder={t('scLastCodePlaceholder')} onChange={e => { setStartingCode(e.target.value); setFieldErrors(p => ({ ...p, startingCode: false })); }} />
                 <p className="field-hint">{t('scLastCodeHint')}</p>
               </div>
             </div>
@@ -643,13 +658,13 @@ export default function SupplierConverter() {
               <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>{t('scMultiSheetNote')}</p>
             )}
             <div className="grid-3">
-              {renderField(t('scBarcode'), barcodeRef, setBarcodeRef, { required: true, autoKey: 'barcode', tooltip: t('ttBarcode') })}
-              {renderField(t('scProductsoort'), productsoortRef, setProductsoortRef, { required: true, autoKey: 'productsoort', hint: t('scProductsoortHint'), tooltip: t('ttProductsoort') })}
+              {renderField(t('scBarcode'), barcodeRef, setBarcodeRef, { required: true, autoKey: 'barcode', tooltip: t('ttBarcode'), errorKey: 'barcodeRef' })}
+              {renderField(t('scProductsoort'), productsoortRef, setProductsoortRef, { required: true, autoKey: 'productsoort', hint: t('scProductsoortHint'), tooltip: t('ttProductsoort'), errorKey: 'productsoortRef' })}
               {renderField(t('scKostprijs'), kostprijsRef, setKostprijsRef, { required: true, autoKey: 'kostprijs', tooltip: t('ttKostprijs') })}
               {renderField(t('scBestelnummer'), bestelnummerRef, setBestelnummerRef, { required: true, autoKey: 'bestelnummer', hint: t('scBestelnummerHint'), tooltip: t('ttBestelnummer') })}
               {renderField(t('scVerkoopprijs'), verkoopprijsRef, setVerkoopprijsRef, { required: true, autoKey: 'verkoopprijs', tooltip: t('ttVerkoopprijs') })}
-              {renderField(t('scMaat'), maatRef, setMaatRef, { required: true, autoKey: 'maat', tooltip: t('ttMaat') })}
-              {renderField(t('scKleur'), kleurRef, handleKleurRefChange, { required: true, autoKey: 'kleur', tooltip: t('ttKleur') })}
+              {renderField(t('scMaat'), maatRef, setMaatRef, { required: true, autoKey: 'maat', tooltip: t('ttMaat'), errorKey: 'maatRef' })}
+              {renderField(t('scKleur'), kleurRef, handleKleurRefChange, { required: true, autoKey: 'kleur', tooltip: t('ttKleur'), errorKey: 'kleurRef' })}
               {renderField(t('scVeiligheid'), veiligheidsclassRef, setVeiligheidsclassRef, { optional: true, autoKey: 'veiligheid', tooltip: t('ttVeiligheid') })}
             </div>
 
@@ -824,8 +839,8 @@ export default function SupplierConverter() {
             <div className="card-title">{t('scDescColsCardTitle')}</div>
             <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: '0.75rem', marginTop: '-0.25rem' }}>{t('scDescColsCardDesc')}</p>
             <div className="grid-2" style={{ alignItems: 'flex-start' }}>
-              <MultiColCombiner sheetNames={sheetNames} primarySheet={primarySheet} getSheetCols={getSheetCols} selected={omschrijvingRefs} onChange={setOmschrijvingRefs} label={t('scOmschrijving')} hint={t('scOmschrijvingHint')} tooltip={t('ttOmschrijving')} required />
-              <MultiColCombiner sheetNames={sheetNames} primarySheet={primarySheet} getSheetCols={getSheetCols} selected={productnaamRefs} onChange={setProductnaamRefs} label={t('scProductnaam')} hint={t('scProductnaamHint')} tooltip={t('ttProductnaam')} required />
+              <MultiColCombiner sheetNames={sheetNames} primarySheet={primarySheet} getSheetCols={getSheetCols} selected={omschrijvingRefs} onChange={v => { setOmschrijvingRefs(v); setFieldErrors(p => ({ ...p, omschrijvingRefs: false })); }} label={t('scOmschrijving')} hint={t('scOmschrijvingHint')} tooltip={t('ttOmschrijving')} required hasError={!!fieldErrors.omschrijvingRefs} />
+              <MultiColCombiner sheetNames={sheetNames} primarySheet={primarySheet} getSheetCols={getSheetCols} selected={productnaamRefs} onChange={v => { setProductnaamRefs(v); setFieldErrors(p => ({ ...p, productnaamRefs: false })); }} label={t('scProductnaam')} hint={t('scProductnaamHint')} tooltip={t('ttProductnaam')} required hasError={!!fieldErrors.productnaamRefs} />
             </div>
           </div>
 
