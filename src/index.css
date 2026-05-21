@@ -614,3 +614,41 @@ select.needs-review  { border-color: #BA7517; }
   border-top-color: var(--tt-bg);
 }
 .tt:hover .tt-box { display: block; }
+
+/* ── Column preview (mapping step) ── */
+.col-preview {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: var(--bg-secondary);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.col-preview-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+}
+.col-preview-vals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.col-preview-val {
+  font-size: 11px;
+  color: var(--text);
+  background: var(--bg);
+  border: 0.5px solid var(--border-md);
+  border-radius: 4px;
+  padding: 2px 7px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

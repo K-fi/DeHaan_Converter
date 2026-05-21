@@ -13,6 +13,7 @@ import { normalizeEan, looksLikeEan, fmtDate } from '../utils/matching';
 import { sheetTo2D, downloadXLSX, downloadCSV } from '../utils/xlsx';
 import { detectHeaderRow, parseFromHeaderRow } from '../utils/headers';
 import PresetBar from '../components/PresetBar';
+import ColumnPreview from '../components/ColumnPreview';
 import type {
   ParsedFile, BannerInfo, MatchResults, MatchArgs, AutoDetected, DupeOccurrence, ReportRow,
   Preset, PriceUpdaterMappings,
@@ -379,6 +380,32 @@ export default function PriceUpdater() {
     });
   }
 
+  async function downloadFileSplit() {
+    setDownloading(true);
+    try {
+      await new Promise<void>(r => setTimeout(r, 30));
+      const headerCol = exactHeaderColRef.current;
+      const allData = headerCol
+        ? results!.resultData.filter(row => String(row[headerCol] ?? '').trim() === 'H')
+        : results!.resultData;
+      const baseName = exactFile!.fileName.replace(/\.(xlsx?|xlsm|xlsb|ods|csv|tsv|txt)$/i, '');
+      const CHUNK = 999;
+      const total = allData.length;
+      const parts = Math.ceil(total / CHUNK);
+      for (let i = 0; i < parts; i++) {
+        const start = i * CHUNK;
+        const end = Math.min(start + CHUNK, total);
+        const partLabel = lang === 'nl'
+          ? `deel${i + 1}van${parts}_rijen${start + 1}-${end}`
+          : `part${i + 1}of${parts}_rows${start + 1}-${end}`;
+        downloadXLSX(allData.slice(start, end), results!.resultCols, `${baseName}_updated_${partLabel}.xlsx`);
+        if (i < parts - 1) await new Promise<void>(r => setTimeout(r, 400));
+      }
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   function downloadReport()   { withDownload(() => downloadCSV(results!.reportRows, 'price_update_report.csv')); }
   function downloadDupes()    { withDownload(() => downloadXLSX(results!.dupeData, Object.keys(results!.dupeData[0] || {}), 'duplicate_eans.xlsx', 'Duplicates')); }
   function downloadNullEans() { withDownload(() => { if (!results!.nullEanData.length) return; downloadXLSX(results!.nullEanData, Object.keys(results!.nullEanData[0] || {}), 'supplier_missing_ean.xlsx', 'Missing EAN'); }); }
@@ -540,6 +567,7 @@ export default function PriceUpdater() {
                 <select value={exactEan} className={exactEan && exactEan === ad.eEan ? 'auto-detected' : exactEan ? '' : 'needs-review'} style={fieldErrors.exactEan ? { border: '1.5px solid var(--red-text)' } : undefined} onChange={e => { setExactEan(e.target.value); setFieldErrors(p => ({ ...p, exactEan: false })); }}>
                   {getExactSheet(exactEanSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                <ColumnPreview col={exactEan} data={getExactSheet(exactEanSheet).data} />
                 <SheetPicker sheetNames={exactSheetNames} value={exactEanSheet} onChange={s => { setExactEanSheet(s); setExactEan(getExactSheet(s).cols[0] ?? ''); }} />
               </div>
               <div>
@@ -550,6 +578,7 @@ export default function PriceUpdater() {
                   <option value="">— none —</option>
                   {getExactSheet(exactCodeSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                <ColumnPreview col={exactCode} data={getExactSheet(exactCodeSheet).data} />
                 <SheetPicker sheetNames={exactSheetNames} value={exactCodeSheet} onChange={s => { setExactCodeSheet(s); setExactCode(''); }} />
               </div>
               <div>
@@ -559,6 +588,7 @@ export default function PriceUpdater() {
                 <select value={exactPrice} className={exactPrice && exactPrice === ad.ePrice ? 'auto-detected' : exactPrice ? '' : 'needs-review'} style={fieldErrors.exactPrice ? { border: '1.5px solid var(--red-text)' } : undefined} onChange={e => { setExactPrice(e.target.value); setFieldErrors(p => ({ ...p, exactPrice: false })); }}>
                   {getExactSheet(exactPriceSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                <ColumnPreview col={exactPrice} data={getExactSheet(exactPriceSheet).data} />
                 <SheetPicker sheetNames={exactSheetNames} value={exactPriceSheet} onChange={s => { setExactPriceSheet(s); setExactPrice(getExactSheet(s).cols[0] ?? ''); }} />
               </div>
             </div>
@@ -586,6 +616,7 @@ export default function PriceUpdater() {
                 <select value={supplEan} className={supplEan && supplEan === ad.sEan ? 'auto-detected' : supplEan ? '' : 'needs-review'} style={fieldErrors.supplEan ? { border: '1.5px solid var(--red-text)' } : undefined} onChange={e => { setSupplEan(e.target.value); setFieldErrors(p => ({ ...p, supplEan: false })); }}>
                   {getSupplSheet(supplEanSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                <ColumnPreview col={supplEan} data={getSupplSheet(supplEanSheet).data} />
                 <SheetPicker sheetNames={supplSheetNames} value={supplEanSheet} onChange={s => { setSupplEanSheet(s); setSupplEan(getSupplSheet(s).cols[0] ?? ''); setSupplExtraEans([]); }} />
                 <div style={{ marginTop: 6 }}>
                   <button className="btn btn-sm" style={{ fontSize: 11 }} onClick={() => { setShowExtraEan(v => !v); setExtraEanSearch(''); }}>
@@ -643,6 +674,7 @@ export default function PriceUpdater() {
                   <option value="">— none —</option>
                   {getSupplSheet(supplCodeSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                <ColumnPreview col={supplCode} data={getSupplSheet(supplCodeSheet).data} />
                 <SheetPicker sheetNames={supplSheetNames} value={supplCodeSheet} onChange={s => { setSupplCodeSheet(s); setSupplCode(''); }} />
               </div>
               <div>
@@ -652,6 +684,7 @@ export default function PriceUpdater() {
                 <select value={supplPrice} className={supplPrice && supplPrice === ad.sPrice ? 'auto-detected' : supplPrice ? '' : 'needs-review'} style={fieldErrors.supplPrice ? { border: '1.5px solid var(--red-text)' } : undefined} onChange={e => { setSupplPrice(e.target.value); setFieldErrors(p => ({ ...p, supplPrice: false })); }}>
                   {getSupplSheet(supplPriceSheet).cols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                <ColumnPreview col={supplPrice} data={getSupplSheet(supplPriceSheet).data} />
                 <SheetPicker sheetNames={supplSheetNames} value={supplPriceSheet} onChange={s => { setSupplPriceSheet(s); setSupplPrice(getSupplSheet(s).cols[0] ?? ''); }} />
               </div>
             </div>
@@ -881,6 +914,21 @@ export default function PriceUpdater() {
             <button className="btn btn-download" disabled={downloading} onClick={downloadFile}>
               {downloading ? (lang === 'nl' ? 'Downloaden…' : 'Downloading…') : t('puDlFile')}
             </button>
+            {(() => {
+              const hc = exactHeaderColRef.current;
+              const dlLen = hc
+                ? results.resultData.filter(row => String(row[hc] ?? '').trim() === 'H').length
+                : results.resultData.length;
+              if (dlLen <= 999) return null;
+              const parts = Math.ceil(dlLen / 999);
+              return (
+                <button className="btn btn-download" disabled={downloading} onClick={downloadFileSplit}>
+                  {downloading
+                    ? (lang === 'nl' ? 'Downloaden…' : 'Downloading…')
+                    : `${t('puDlFileSplit')} (${parts} ${lang === 'nl' ? 'bestanden' : 'files'})`}
+                </button>
+              );
+            })()}
           </div>
         </>
       )}

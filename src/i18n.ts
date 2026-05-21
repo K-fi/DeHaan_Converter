@@ -27,6 +27,10 @@ const T: Record<string, [string, string]> = {
   previewCols:          ['kolommen',                     'cols'],
   previewShowing:       ['getoond',                      'showing'],
 
+  // ── ColumnPreview ────────────────────────────────────────
+  colPreviewLabel:      ['Voorbeeld',                    'Preview'],
+  colPreviewTooltip:    ['Eerste waarden uit deze kolom in uw bestand. Helpt u te bevestigen dat u de juiste kolom hebt geselecteerd.', 'First values found in this column from your file. Helps you confirm you selected the right column.'],
+
   // ── Shared buttons ───────────────────────────────────────
   btnBack:              ['← Terug',                      '← Back'],
   btnContinue:          ['Doorgaan →',                   'Continue →'],
@@ -123,6 +127,7 @@ const T: Record<string, [string, string]> = {
   puHeaderFilterActive: ['✓ Headerfilter actief',        '✓ Header filter active'],
   puDlReport:           ['⬇ Rapport downloaden (.csv)',  '⬇ Download report (.csv)'],
   puDlFile:             ['⬇ Bijgewerkt bestand downloaden (.xlsx)', '⬇ Download updated file (.xlsx)'],
+  puDlFileSplit:        ['⬇ Downloaden per 999 rijen',  '⬇ Download per 999 rows'],
 
   // ── PriceUpdater tooltips ────────────────────────────────
   ttExactEan:     ['Kolom met EAN/GTIN-barcodes in uw Exact-export. Primaire sleutel voor het matchen van producten. Automatisch gedetecteerd op basis van kolomnamen en inhoud.', 'Column containing EAN/GTIN barcodes in your Exact export. Used as the primary key to match products with the supplier file. Auto-detected from column names and content.'],
