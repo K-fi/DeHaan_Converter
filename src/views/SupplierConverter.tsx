@@ -592,7 +592,7 @@ export default function SupplierConverter() {
   }
 
   function downloadFile() {
-    const name = supplFile!.fileName.replace(/\.(xlsx?|xlsm|xlsb|ods|csv|tsv|txt)$/i, '_converted.xlsx');
+    const name = supplFile!.fileName.replace(/\.(xlsx?|xlsm|xlsb|ods|csv|tsv|txt)$/i, '_converted.xls');
     const data = outputData!;
     setDownloading(true);
     setTimeout(() => {

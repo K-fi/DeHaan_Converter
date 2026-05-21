@@ -373,7 +373,7 @@ export default function PriceUpdater() {
 
   function downloadFile() {
     withDownload(() => {
-      const name = exactFile!.fileName.replace(/\.(xlsx?|xlsm|xlsb|ods|csv|tsv|txt)$/i, '_updated.xlsx');
+      const name = exactFile!.fileName.replace(/\.(xlsx?|xlsm|xlsb|ods|csv|tsv|txt)$/i, '_updated.xls');
       const headerCol = exactHeaderColRef.current;
       const data = headerCol ? results!.resultData.filter(row => String(row[headerCol] ?? '').trim() === 'H') : results!.resultData;
       downloadXLSX(data, results!.resultCols, name);
@@ -398,7 +398,7 @@ export default function PriceUpdater() {
         const partLabel = lang === 'nl'
           ? `deel${i + 1}van${parts}_rijen${start + 1}-${end}`
           : `part${i + 1}of${parts}_rows${start + 1}-${end}`;
-        downloadXLSX(allData.slice(start, end), results!.resultCols, `${baseName}_updated_${partLabel}.xlsx`);
+        downloadXLSX(allData.slice(start, end), results!.resultCols, `${baseName}_updated_${partLabel}.xls`);
         if (i < parts - 1) await new Promise<void>(r => setTimeout(r, 400));
       }
     } finally {
@@ -407,9 +407,9 @@ export default function PriceUpdater() {
   }
 
   function downloadReport()   { withDownload(() => downloadCSV(results!.reportRows, 'price_update_report.csv')); }
-  function downloadDupes()    { withDownload(() => downloadXLSX(results!.dupeData, Object.keys(results!.dupeData[0] || {}), 'duplicate_eans.xlsx', 'Duplicates')); }
-  function downloadNullEans() { withDownload(() => { if (!results!.nullEanData.length) return; downloadXLSX(results!.nullEanData, Object.keys(results!.nullEanData[0] || {}), 'supplier_missing_ean.xlsx', 'Missing EAN'); }); }
-  function downloadNullEansExact() { withDownload(() => { if (!results!.nullEanExactData.length) return; downloadXLSX(results!.nullEanExactData, Object.keys(results!.nullEanExactData[0] || {}), 'exact_missing_ean.xlsx', 'Missing EAN'); }); }
+  function downloadDupes()    { withDownload(() => downloadXLSX(results!.dupeData, Object.keys(results!.dupeData[0] || {}), 'duplicate_eans.xls', 'Duplicates')); }
+  function downloadNullEans() { withDownload(() => { if (!results!.nullEanData.length) return; downloadXLSX(results!.nullEanData, Object.keys(results!.nullEanData[0] || {}), 'supplier_missing_ean.xls', 'Missing EAN'); }); }
+  function downloadNullEansExact() { withDownload(() => { if (!results!.nullEanExactData.length) return; downloadXLSX(results!.nullEanExactData, Object.keys(results!.nullEanExactData[0] || {}), 'exact_missing_ean.xls', 'Missing EAN'); }); }
 
   function downloadUnmatched() {
     withDownload(() => {
@@ -434,7 +434,7 @@ export default function PriceUpdater() {
           'status artikel': 'Vervallen',
         };
       });
-      downloadXLSX(unmatchedData, ['Header', 'Item code', 'Item descri', 'Purchase u', 'Purchase u Currency', 'Barcode', 'status artikel'], 'unmatched_products.xlsx', 'Unmatched');
+      downloadXLSX(unmatchedData, ['Header', 'Item code', 'Item descri', 'Purchase u', 'Purchase u Currency', 'Barcode', 'status artikel'], 'unmatched_products.xls', 'Unmatched');
     });
   }
 

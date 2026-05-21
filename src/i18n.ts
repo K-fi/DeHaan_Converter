@@ -104,7 +104,7 @@ const T: Record<string, [string, string]> = {
   puColCurrentPrice:    ['Huidige prijs',                'Current price'],
   puColStatus:          ['Status',                       'Status'],
   puBadgeNotMatched:    ['Niet gevonden',                'Not matched'],
-  puDlUnmatched:        ['⬇ Niet-gevonden downloaden (.xlsx)', '⬇ Download unmatched (.xlsx)'],
+  puDlUnmatched:        ['⬇ Niet-gevonden downloaden (.xls)', '⬇ Download unmatched (.xls)'],
 
   puDupesTitle:         ['Dubbele EANs in leveranciersbestand', 'Duplicate EANs in supplier file'],
   puColOccurrences:     ['Voorkomens',                   'Occurrences'],
@@ -114,19 +114,19 @@ const T: Record<string, [string, string]> = {
   puBadgeUpdated:       ['Bijgewerkt',                   'Updated'],
   puOccurrence:         ['voorkomen',                    'occurrence'],
   puReapplyDupes:       ['↻ Prijsselecties opnieuw toepassen', '↻ Reapply price selections'],
-  puDlDupes:            ['⬇ Duplicaten downloaden (.xlsx)', '⬇ Download duplicates (.xlsx)'],
+  puDlDupes:            ['⬇ Duplicaten downloaden (.xls)', '⬇ Download duplicates (.xls)'],
 
   puNullSupplTitle:     ['Ontbrekende EAN — leverancierregels zonder barcode (stilzwijgend overgeslagen)', 'Missing EAN — supplier rows with no barcode (silently skipped)'],
   puColNum:             ['#',                            '#'],
   puColPrice:           ['Prijs',                        'Price'],
   puBadgeNoEan:         ['Geen EAN',                     'No EAN'],
-  puDlNullEan:          ['⬇ Regels met ontbrekende EAN downloaden (.xlsx)', '⬇ Download missing EAN rows (.xlsx)'],
+  puDlNullEan:          ['⬇ Regels met ontbrekende EAN downloaden (.xls)', '⬇ Download missing EAN rows (.xls)'],
   puNullExactTitle:     ['Ontbrekende EAN — Exact-regels zonder barcode (kunnen niet worden bijgewerkt)', 'Missing EAN — Exact file rows with no barcode (cannot be updated)'],
 
   puPreviewCardTitle:   ['Voorbeeld bijgewerkt bestand', 'Updated file preview'],
   puHeaderFilterActive: ['✓ Headerfilter actief',        '✓ Header filter active'],
   puDlReport:           ['⬇ Rapport downloaden (.csv)',  '⬇ Download report (.csv)'],
-  puDlFile:             ['⬇ Bijgewerkt bestand downloaden (.xlsx)', '⬇ Download updated file (.xlsx)'],
+  puDlFile:             ['⬇ Bijgewerkt bestand downloaden (.xls)', '⬇ Download updated file (.xls)'],
   puDlFileSplit:        ['⬇ Downloaden per 999 rijen',  '⬇ Download per 999 rows'],
 
   // ── PriceUpdater tooltips ────────────────────────────────
@@ -237,7 +237,7 @@ const T: Record<string, [string, string]> = {
 
   scBack:               ['← Terug',                      '← Back'],
   scConvert:            ['Converteren →',                'Convert →'],
-  scDownload:           ['⬇ Geconverteerd bestand downloaden (.xlsx)', '⬇ Download converted file (.xlsx)'],
+  scDownload:           ['⬇ Geconverteerd bestand downloaden (.xls)', '⬇ Download converted file (.xls)'],
 
   scConvCompleteTitle:  ['Conversie voltooid',           'Conversion complete'],
   scChipSupplier:       ['Leverancier',                  'Supplier'],
