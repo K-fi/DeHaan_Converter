@@ -9,7 +9,7 @@ import SheetPicker from '../components/SheetPicker';
 import Tooltip from '../components/Tooltip';
 import { useLang } from '../context/LangContext';
 import { findBestCol, EAN_HINTS, CODE_HINTS } from '../utils/columns';
-import { buildOutputRows, OUTPUT_COLS } from '../utils/converter';
+import { buildOutputRowsAsync, OUTPUT_COLS } from '../utils/converter';
 import { sheetTo2D, downloadXLSX } from '../utils/xlsx';
 import { detectHeaderRow, parseFromHeaderRow } from '../utils/headers';
 import PresetBar from '../components/PresetBar';
@@ -253,6 +253,7 @@ export default function SupplierConverter() {
   const [productnaamRefs,     setProductnaamRefs]     = useState<ColRef[]>([]);
   const [outputData,          setOutputData]          = useState<Record<string, unknown>[] | null>(null);
   const [processing,          setProcessing]          = useState(false);
+  const [processingProgress,  setProcessingProgress]  = useState(0);
   const [downloading,         setDownloading]         = useState(false);
   const [fieldErrors,         setFieldErrors]         = useState<Record<string, boolean>>({});
   const [codeReminder,        setCodeReminder]        = useState(false);
@@ -529,7 +530,7 @@ export default function SupplierConverter() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  function processFiles() {
+  async function processFiles() {
     const code = parseInt(startingCode, 10);
     const errs: Record<string, boolean> = {};
     if (!hoofdleverancier.trim())      errs.hoofdleverancier = true;
@@ -576,15 +577,18 @@ export default function SupplierConverter() {
     };
 
     setProcessing(true);
-    setTimeout(() => {
-      try {
-        setOutputData(buildOutputRows(args));
-        setStep(3);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      } finally {
-        setProcessing(false);
-      }
-    }, 30);
+    setProcessingProgress(0);
+    // defer so the loading state paints before heavy work begins
+    await new Promise<void>(r => setTimeout(r, 30));
+    try {
+      const data = await buildOutputRowsAsync(args, pct => setProcessingProgress(pct));
+      setOutputData(data);
+      setStep(3);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+      setProcessing(false);
+      setProcessingProgress(0);
+    }
   }
 
   function downloadFile() {
@@ -922,9 +926,16 @@ export default function SupplierConverter() {
 
           <div className="actions">
             <button className="btn" disabled={processing} onClick={() => { setStep(1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>{t('scBack')}</button>
-            <button className="btn btn-primary" disabled={processing} onClick={processFiles}>
-              {processing ? (lang === 'nl' ? 'Verwerken…' : 'Processing…') : t('scConvert')}
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'stretch', flex: 1, maxWidth: 220 }}>
+              <button className="btn btn-primary" disabled={processing} onClick={processFiles}>
+                {processing ? `${lang === 'nl' ? 'Verwerken' : 'Processing'}… ${processingProgress > 0 ? processingProgress + '%' : ''}` : t('scConvert')}
+              </button>
+              {processing && (
+                <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${processingProgress}%`, background: 'var(--btn-primary-bg)', transition: 'width 0.15s ease' }} />
+                </div>
+              )}
+            </div>
           </div>
         </>
       )}

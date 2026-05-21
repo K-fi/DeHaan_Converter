@@ -59,17 +59,25 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
     setPreview({ cols: parsed.cols, data: parsed.data });
     const suffix = isMulti ? ` [${sheetName}]` : '';
     setUploadedName('✓ ' + fileNameRef.current + suffix);
+    const bigFile = parsed.data.length > 100000;
+    const rowWarning = bigFile ? (lang === 'nl' ? ' Groot bestand — verwerking kan enige tijd duren.' : ' Large file — processing may take a moment.') : '';
     setBanner({
-      type: 'success',
-      icon: '✓',
+      type: bigFile ? 'warning' : 'success',
+      icon: bigFile ? '⚠' : '✓',
       message: lang === 'nl'
-        ? `Koptekst op rij <strong>${hIdx + 1}</strong>. <strong>${parsed.cols.length} kolommen</strong> en <strong>${parsed.data.length} rijen</strong> gevonden.`
-        : `Header on row <strong>${hIdx + 1}</strong>. Found <strong>${parsed.cols.length} columns</strong> and <strong>${parsed.data.length} rows</strong>.`,
+        ? `Koptekst op rij <strong>${hIdx + 1}</strong>. <strong>${parsed.cols.length} kolommen</strong> en <strong>${parsed.data.length} rijen</strong> gevonden.${rowWarning}`
+        : `Header on row <strong>${hIdx + 1}</strong>. Found <strong>${parsed.cols.length} columns</strong> and <strong>${parsed.data.length} rows</strong>.${rowWarning}`,
     });
     onFileLoaded({ data: parsed.data, cols: parsed.cols, rawSheet: ws, workbook: wb, fileName: fileNameRef.current });
   }
 
+  const MAX_FILE_MB = 100;
+
   function handleFile(file: File) {
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      setBanner({ type: 'warning', icon: '⚠', message: lang === 'nl' ? `Bestand is te groot (max. ${MAX_FILE_MB} MB). Splits het op in kleinere bestanden.` : `File too large (max ${MAX_FILE_MB} MB). Please split it into smaller files.` });
+      return;
+    }
     setParsing(true);
     fileNameRef.current = file.name;
     readFileRaw(

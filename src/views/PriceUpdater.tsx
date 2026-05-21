@@ -51,8 +51,9 @@ export default function PriceUpdater() {
   const [supplColBanner, setSupplColBanner] = useState<BannerInfo | null>(null);
   const [results,        setResults]        = useState<MatchResults | null>(null);
   const [dupeSelections, setDupeSelections] = useState<Record<string, number>>({});
-  const [processing,     setProcessing]     = useState(false);
-  const [downloading,    setDownloading]    = useState(false);
+  const [processing,          setProcessing]         = useState(false);
+  const [processingProgress,  setProcessingProgress] = useState(0);
+  const [downloading,         setDownloading]        = useState(false);
   const [presetBanner,   setPresetBanner]   = useState<BannerInfo | null>(null);
   const [fieldErrors,    setFieldErrors]    = useState<Record<string, boolean>>({});
 
@@ -125,7 +126,7 @@ export default function PriceUpdater() {
 
   // ── Processing ──────────────────────────────────────────
 
-  function processFiles() {
+  async function processFiles() {
     const errs: Record<string, boolean> = {};
     if (!exactEan)   errs.exactEan   = true;
     if (!exactPrice) errs.exactPrice = true;
@@ -134,28 +135,46 @@ export default function PriceUpdater() {
     if (Object.keys(errs).length > 0) { setFieldErrors(errs); alert(lang === 'nl' ? 'Selecteer alle verplichte kolommen (gemarkeerd met *).' : 'Please select all required columns (marked with *).'); return; }
     setFieldErrors({});
 
-    // Capture synchronous data before deferring to setTimeout
+    // Capture all values synchronously before going async (avoids stale closure issues)
     exactHeaderColRef.current = exactFile!.cols.find(c => c.toLowerCase() === 'header') ?? '';
-    const supplEanData   = getSupplSheet(supplEanSheet).data;
-    const supplCodeData  = supplCode ? getSupplSheet(supplCodeSheet).data : [];
-    const supplPriceData = getSupplSheet(supplPriceSheet).data;
-    const rowCount = supplFile!.data.length;
+    const supplEanData    = getSupplSheet(supplEanSheet).data;
+    const supplCodeData   = supplCode ? getSupplSheet(supplCodeSheet).data : [];
+    const supplPriceData  = getSupplSheet(supplPriceSheet).data;
+    const sRowCount       = supplFile!.data.length;
+    const capSupplEan     = supplEan;
+    const capSupplCode    = supplCode;
+    const capSupplExtra   = supplExtraEans;
+    const capSupplPrice   = supplPrice;
+    const capExactEan     = exactEan;
+    const capExactCode    = exactCode;
+    const capExactPrice   = exactPrice;
+    const capExactEanSh   = exactEanSheet;
+    const capExactCodeSh  = exactCodeSheet;
+    const capExactPriceSh = exactPriceSheet;
+    const capActiveFrom   = activeFrom;
+    const capActiveTo     = activeTo;
 
     setProcessing(true);
+    setProcessingProgress(0);
+    await new Promise<void>(r => setTimeout(r, 30));
 
-    setTimeout(() => {
-      try {
-        const newAllOccurrences: Record<string, DupeOccurrence[]> = {};
-        const newSupplByCode: Record<string, unknown> = {};
-        const newNullEanRows: Record<string, unknown>[] = [];
+    try {
+      const CHUNK = 5000;
 
-        for (let rowIdx = 0; rowIdx < rowCount; rowIdx++) {
-          const code = supplCode ? String(supplCodeData[rowIdx]?.[supplCode] ?? '').trim() : '';
+      // ── Phase 1: Build supplier lookup maps (0 → 50%) ──────
+      const newAllOccurrences: Record<string, DupeOccurrence[]> = {};
+      const newSupplByCode: Record<string, unknown> = {};
+      const newNullEanRows: Record<string, unknown>[] = [];
+
+      for (let i = 0; i < sRowCount; i += CHUNK) {
+        const end = Math.min(i + CHUNK, sRowCount);
+        for (let rowIdx = i; rowIdx < end; rowIdx++) {
+          const code = capSupplCode ? String(supplCodeData[rowIdx]?.[capSupplCode] ?? '').trim() : '';
           const rowEans: Record<string, boolean> = {};
-          const e = normalizeEan(supplEanData[rowIdx]?.[supplEan] ?? '');
+          const e = normalizeEan(supplEanData[rowIdx]?.[capSupplEan] ?? '');
           if (e) rowEans[e] = true;
-          supplExtraEans.forEach(col => { const e2 = normalizeEan(supplEanData[rowIdx]?.[col] ?? ''); if (e2) rowEans[e2] = true; });
-          const priceVal = supplPriceData[rowIdx]?.[supplPrice];
+          capSupplExtra.forEach(col => { const e2 = normalizeEan(supplEanData[rowIdx]?.[col] ?? ''); if (e2) rowEans[e2] = true; });
+          const priceVal = supplPriceData[rowIdx]?.[capSupplPrice];
           const baseRow  = supplEanData[rowIdx] ?? {};
           if (Object.keys(rowEans).length === 0) newNullEanRows.push(baseRow);
           Object.keys(rowEans).forEach(ean => {
@@ -164,31 +183,102 @@ export default function PriceUpdater() {
           });
           if (code && !newSupplByCode[code]) newSupplByCode[code] = priceVal;
         }
-
-        nullEanRowsRef.current = newNullEanRows;
-
-        const newSupplByEan: Record<string, unknown> = {};
-        const newDupeSelections: Record<string, number> = {};
-        Object.keys(newAllOccurrences).forEach(ean => {
-          const occs = newAllOccurrences[ean];
-          if (occs.length > 1) newDupeSelections[ean] = 0;
-          newSupplByEan[ean] = occs[0].price;
-        });
-
-        allOccurrencesRef.current = newAllOccurrences;
-        supplByEanRef.current     = newSupplByEan;
-        supplByCodeRef.current    = newSupplByCode;
-        matchArgsRef.current      = { eEanCol: exactEan, eCodeCol: exactCode, ePriceCol: exactPrice, fromValue: activeFrom, toValue: activeTo };
-        matchSheetArgsRef.current = { eEanSheet: exactEanSheet, eCodeSheet: exactCodeSheet, ePriceSheet: exactPriceSheet };
-
-        setDupeSelections(newDupeSelections);
-        setResults(computeMatching(newSupplByEan, newSupplByCode));
-        setStep(3);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      } finally {
-        setProcessing(false);
+        setProcessingProgress(Math.round((end / sRowCount) * 50));
+        await new Promise<void>(r => setTimeout(r, 0));
       }
-    }, 30);
+
+      nullEanRowsRef.current = newNullEanRows;
+
+      const newSupplByEan: Record<string, unknown> = {};
+      const newDupeSelections: Record<string, number> = {};
+      Object.keys(newAllOccurrences).forEach(ean => {
+        const occs = newAllOccurrences[ean];
+        if (occs.length > 1) newDupeSelections[ean] = 0;
+        newSupplByEan[ean] = occs[0].price;
+      });
+
+      allOccurrencesRef.current = newAllOccurrences;
+      supplByEanRef.current     = newSupplByEan;
+      supplByCodeRef.current    = newSupplByCode;
+      matchArgsRef.current      = { eEanCol: capExactEan, eCodeCol: capExactCode, ePriceCol: capExactPrice, fromValue: capActiveFrom, toValue: capActiveTo };
+      matchSheetArgsRef.current = { eEanSheet: capExactEanSh, eCodeSheet: capExactCodeSh, ePriceSheet: capExactPriceSh };
+
+      // ── Phase 2: Match Exact rows (50 → 100%) ──────────────
+      const exactEanData   = getExactSheet(capExactEanSh).data;
+      const exactCodeData  = capExactCode ? getExactSheet(capExactCodeSh).data : [];
+      const exactPriceData = getExactSheet(capExactPriceSh).data;
+      const eRowCount      = exactFile!.data.length;
+
+      const dupeEanSet = new Set(Object.entries(newAllOccurrences).filter(([, o]) => o.length > 1).map(([ean]) => ean));
+      const dupesList: [string, number][] = [...dupeEanSet].map(ean => [ean, newAllOccurrences[ean].length]);
+
+      const resultData: Record<string, unknown>[] = [];
+      const reportRows: ReportRow[] = [];
+      const unmatched: MatchResults['unmatched'] = [];
+      const nullEanExactList: Record<string, unknown>[] = [];
+      const usedDupeEans = new Set<string>();
+      let updated = 0;
+
+      for (let i = 0; i < eRowCount; i += CHUNK) {
+        const end = Math.min(i + CHUNK, eRowCount);
+        for (let rowIdx = i; rowIdx < end; rowIdx++) {
+          const primaryRow = exactFile!.data[rowIdx];
+          const copy: Record<string, unknown> = { ...primaryRow };
+          const ean  = normalizeEan(exactEanData[rowIdx]?.[capExactEan] ?? '');
+          const code = capExactCode ? String(exactCodeData[rowIdx]?.[capExactCode] ?? '').trim() : '';
+          const oldPrice = exactPriceData[rowIdx]?.[capExactPrice];
+
+          if (!ean) nullEanExactList.push(primaryRow);
+          let newPrice: unknown;
+          let matchedBy = '';
+
+          if (ean && Object.prototype.hasOwnProperty.call(newSupplByEan, ean)) {
+            newPrice = newSupplByEan[ean]; matchedBy = 'EAN';
+            if (dupeEanSet.has(ean)) usedDupeEans.add(ean);
+          } else if (code && Object.prototype.hasOwnProperty.call(newSupplByCode, code)) {
+            newPrice = newSupplByCode[code]; matchedBy = 'Article code (fallback)';
+          }
+
+          if (newPrice !== undefined) {
+            copy[capExactPrice] = newPrice; updated++;
+            if (capActiveFrom) copy['Active from'] = fmtDate(capActiveFrom);
+            if (capActiveTo)   copy['Active to']   = fmtDate(capActiveTo);
+            reportRows.push({ EAN: ean, ArticleCode: code, OldPrice: oldPrice, NewPrice: newPrice, ActiveFrom: capActiveFrom || '', ActiveTo: capActiveTo || '', Status: 'Updated', MatchedBy: matchedBy });
+          } else {
+            unmatched.push({ ean, code, oldPrice, exactRow: primaryRow });
+            reportRows.push({ EAN: ean, ArticleCode: code, OldPrice: oldPrice, NewPrice: '', ActiveFrom: '', ActiveTo: '', Status: 'Not matched', MatchedBy: '' });
+          }
+          resultData.push(copy);
+        }
+        setProcessingProgress(50 + Math.round((end / eRowCount) * 50));
+        await new Promise<void>(r => setTimeout(r, 0));
+      }
+
+      const resultColSet = new Set(exactFile!.cols);
+      resultData.forEach(row => { Object.keys(row).forEach(k => resultColSet.add(k)); });
+      const resultCols = [...resultColSet];
+
+      const dupeData: Record<string, unknown>[] = [];
+      dupesList.forEach(([ean, count]) => { newAllOccurrences[ean].forEach(occ => { dupeData.push({ EAN: ean, 'Total occurrences': count, ...occ.row }); }); });
+
+      const oldPriceCol = `Before: ${capExactPrice}`;
+      const resultPreviewCols = [...resultCols];
+      const priceIdx = resultPreviewCols.indexOf(capExactPrice);
+      if (priceIdx !== -1) resultPreviewCols.splice(priceIdx, 0, oldPriceCol);
+      else resultPreviewCols.unshift(oldPriceCol);
+      const resultPreviewData = resultData.reduce<Record<string, unknown>[]>((acc, row, i) => {
+        if (reportRows[i]?.Status === 'Updated') acc.push({ ...row, [oldPriceCol]: reportRows[i].OldPrice });
+        return acc;
+      }, []);
+
+      setDupeSelections(newDupeSelections);
+      setResults({ updated, total: eRowCount, resultData, resultCols, reportRows, unmatched, dupeData, dupesList, usedDupeEans: [...usedDupeEans], nullEanData: nullEanRowsRef.current, nullEanExactData: nullEanExactList, resultPreviewCols, resultPreviewData });
+      setStep(3);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+      setProcessing(false);
+      setProcessingProgress(0);
+    }
   }
 
   function computeMatching(supplByEan: Record<string, unknown>, supplByCode: Record<string, unknown>): MatchResults {
@@ -587,9 +677,16 @@ export default function PriceUpdater() {
 
           <div className="actions">
             <button className="btn" disabled={processing} onClick={() => { setStep(1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>{t('btnBack')}</button>
-            <button className="btn btn-primary" disabled={processing} onClick={processFiles}>
-              {processing ? (lang === 'nl' ? 'Verwerken…' : 'Processing…') : t('puProcess')}
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'stretch', flex: 1, maxWidth: 220 }}>
+              <button className="btn btn-primary" disabled={processing} onClick={processFiles}>
+                {processing ? `${lang === 'nl' ? 'Verwerken' : 'Processing'}… ${processingProgress > 0 ? processingProgress + '%' : ''}` : t('puProcess')}
+              </button>
+              {processing && (
+                <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${processingProgress}%`, background: 'var(--btn-primary-bg)', transition: 'width 0.15s ease' }} />
+                </div>
+              )}
+            </div>
           </div>
         </>
       )}
