@@ -320,7 +320,7 @@ header p  { font-size: 13px; color: var(--text-secondary); }
 .preview-scroll {
   display: block;
   width: 100%;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: auto;
   max-height: 200px;
   scrollbar-width: thin;
@@ -335,7 +335,6 @@ header p  { font-size: 13px; color: var(--text-secondary); }
   border-collapse: collapse;
   font-size: 11px;
   width: 100%;
-  min-width: 500px;
 }
 .preview-scroll th,
 .preview-scroll td {

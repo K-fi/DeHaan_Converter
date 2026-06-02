@@ -21,6 +21,10 @@ const T: Record<string, [string, string]> = {
   fuHeaderOnRow:        ['Koptekst op rij',              'Header on row'],
   fuApply:              ['Toepassen',                    'Apply'],
   fuSheetLabel:         ['📑 Tabblad',                   '📑 Sheet'],
+  fuCsvWarning:         [
+    'Dit bestand is geen native Excel-bestand. Gegevens zoals barcodes kunnen minder nauwkeurig zijn (bv. wetenschappelijke notatie, afgekapte cijfers). Upload indien mogelijk een .xlsx- of .xls-bestand — dit is het formaat waar de tool op is gebouwd.',
+    'This file is not a native Excel format. Data such as barcodes may be less accurate (e.g. scientific notation, truncated digits). For best results, upload a .xlsx or .xls file — that is the format this tool is built for.',
+  ],
 
   // ── PreviewTable ─────────────────────────────────────────
   previewRows:          ['rijen',                        'rows'],

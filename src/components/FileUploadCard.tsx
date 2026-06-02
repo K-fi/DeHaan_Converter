@@ -19,6 +19,7 @@ interface FileUploadCardProps {
 export default function FileUploadCard({ title, icon, onFileLoaded, initialFile }: FileUploadCardProps) {
   const [uploadedName, setUploadedName] = useState<string | null>(null);
   const [banner, setBanner] = useState<BannerInfo | null>(null);
+  const [isCsvFile, setIsCsvFile] = useState(false);
   const [sheets, setSheets] = useState<string[]>([]);
   const [headerRowNum, setHeaderRowNum] = useState(1);
   const [preview, setPreview] = useState<{ cols: string[]; data: Record<string, unknown>[] } | null>(null);
@@ -78,6 +79,8 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
       setBanner({ type: 'warning', icon: '⚠', message: lang === 'nl' ? `Bestand is te groot (max. ${MAX_FILE_MB} MB). Splits het op in kleinere bestanden.` : `File too large (max ${MAX_FILE_MB} MB). Please split it into smaller files.` });
       return;
     }
+    const isText = !/\.(xlsx?|xlsm|xlsb)$/i.test(file.name);
+    setIsCsvFile(isText);
     setParsing(true);
     fileNameRef.current = file.name;
     readFileRaw(
@@ -163,6 +166,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
       </label>
 
       {!parsing && banner && <Banner {...banner} />}
+      {!parsing && isCsvFile && <Banner type="warning" icon="⚠" message={t('fuCsvWarning')} />}
 
       {!parsing && sheets.length > 1 && (
         <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
