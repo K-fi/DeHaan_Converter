@@ -6,6 +6,9 @@ const T: Record<string, [string, string]> = {
   navPrice:             ['Prijsupdater',               'Price Updater'],
   navConverter:         ['Leverancierconverter',        'Supplier Converter'],
 
+  // ── Tutorial button ──────────────────────────────────────
+  tutorialBtn:          ['Uitleg bekijken (tutorial)',  'Watch tutorial'],
+
   // ── Stepper ──────────────────────────────────────────────
   stepWord:             ['Stap',                        'Step'],
   puStep1:              ['Bestanden uploaden',           'Upload files'],
