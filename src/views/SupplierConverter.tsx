@@ -11,6 +11,9 @@ import { useLang } from '../context/LangContext';
 import { findBestCol, EAN_HINTS, CODE_HINTS } from '../utils/columns';
 import { buildOutputRowsAsync, OUTPUT_COLS } from '../utils/converter';
 import { sheetTo2D, downloadXLSX } from '../utils/xlsx';
+import { loadMappingStore, isMapped, resolveArtikelgroep, resolveEenheid, type MappingStore } from '../utils/mappingStore';
+import MappingEditor from '../components/MappingEditor';
+import ColumnPreview from '../components/ColumnPreview';
 import { detectHeaderRow, parseFromHeaderRow } from '../utils/headers';
 import PresetBar from '../components/PresetBar';
 import type { ParsedFile, BannerInfo, ColRef, Preset, SupplierConverterMappings } from '../types';
@@ -258,8 +261,11 @@ export default function SupplierConverter() {
   const [fieldErrors,         setFieldErrors]         = useState<Record<string, boolean>>({});
   const [codeReminder,        setCodeReminder]        = useState(false);
 
+  const [mappingStore, setMappingStore] = useState<MappingStore>(() => loadMappingStore());
+  const [showMappingEditor, setShowMappingEditor] = useState(false);
+
   const autoDetRef      = useRef<Record<string, string | null>>({});
-  const parsedSheetsRef = useRef<Record<string, { cols: string[]; data: Record<string, unknown>[] }>>({});
+  const parsedSheetsRef = useRef<Record<string, { cols: string[]; data: Record<string, unknown>[] }>>({})
 
   // ── Sheet helpers ────────────────────────────────────────
 
@@ -280,6 +286,16 @@ export default function SupplierConverter() {
   }
 
   function getSheetCols(sheetName: string) { return getSheetInfo(sheetName).cols; }
+
+  // Mapping store is persisted explicitly via the Save button inside MappingEditor
+
+  // Unique productsoort values present in the currently selected column
+  const fileValues = useMemo((): string[] => {
+    if (!productsoortRef.col) return [];
+    const { data } = getSheetInfo(productsoortRef.sheet || primarySheet);
+    return [...new Set(data.map(r => String(r[productsoortRef.col] ?? '').trim()).filter(Boolean))].sort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productsoortRef.col, productsoortRef.sheet, supplFile]);
 
   function buildKleurMapping(ref: ColRef, existing: Record<string, string>): Record<string, string> {
     if (!ref.col) return {};
@@ -560,6 +576,7 @@ export default function SupplierConverter() {
     const args = {
       sheetsData, rowCount, startingCode: code,
       hoofdleverancier: hoofdleverancier.trim(), btwInkoop,
+      mappingStore,
       barcodeRef:               resolve(barcodeRef),
       productsoortRef:          resolve(productsoortRef),
       kostprijsRef:             resolve(kostprijsRef),
@@ -614,10 +631,11 @@ export default function SupplierConverter() {
     label: string,
     ref: ColRef,
     setRef: (r: ColRef) => void,
-    opts: { required?: boolean; optional?: boolean; defaultLabel?: string; hint?: string; autoKey?: string; tooltip?: string; errorKey?: string } = {},
+    opts: { required?: boolean; optional?: boolean; defaultLabel?: string; hint?: string; autoKey?: string; tooltip?: string; errorKey?: string; extra?: React.ReactNode } = {},
   ) {
-    const { required, optional, defaultLabel, hint, autoKey, tooltip, errorKey } = opts;
+    const { required, optional, defaultLabel, hint, autoKey, tooltip, errorKey, extra } = opts;
     const cols = getSheetCols(ref.sheet || primarySheet);
+    const { data } = getSheetInfo(ref.sheet || primarySheet);
     const hasError = errorKey ? !!fieldErrors[errorKey] : false;
     const cls = autoKey ? selClass(autoKey, ref) : (required && !ref.col ? 'needs-review' : '');
     return (
@@ -627,6 +645,8 @@ export default function SupplierConverter() {
           <option value="">{defaultLabel ?? (optional ? '— none —' : '— select column —')}</option>
           {cols.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
+        <ColumnPreview col={ref.col} data={data} />
+        {extra}
         {hint && <p className="field-hint">{hint}</p>}
         <SheetPicker sheetNames={sheetNames} value={ref.sheet || primarySheet} onChange={s => setRef({ sheet: s, col: '' })} />
       </div>
@@ -899,6 +919,81 @@ export default function SupplierConverter() {
               )}
             </div>
           )}
+
+          {/* Productsoort mapping trigger */}
+          {(() => {
+            const unknownCount = fileValues.filter(v => !isMapped(v, mappingStore)).length;
+            const customCount = Object.keys(mappingStore).length;
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--bg-secondary)', border: '0.5px solid var(--border)', borderRadius: 'var(--radius-md)', marginBottom: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>
+                    {lang === 'nl' ? 'Productsoort koppelingen' : 'Productsoort mappings'}
+                  </span>
+                  {fileValues.length > 0 && (
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', marginLeft: 8 }}>
+                      {fileValues.length} {lang === 'nl' ? 'types in bestand' : 'types in file'}
+                    </span>
+                  )}
+                  {unknownCount > 0 && <span className="badge badge-amber" style={{ marginLeft: 6 }}>{unknownCount} {lang === 'nl' ? 'onbekend' : 'unknown'}</span>}
+                  {customCount > 0 && <span className="badge badge-green" style={{ marginLeft: 6 }}>{customCount} {lang === 'nl' ? 'aangepast' : 'custom'}</span>}
+                </div>
+                <button className="btn btn-sm" onClick={() => setShowMappingEditor(true)}>
+                  {lang === 'nl' ? 'Bewerken →' : 'Edit →'}
+                </button>
+              </div>
+            );
+          })()}
+          {showMappingEditor && (
+            <MappingEditor
+              fileValues={fileValues}
+              store={mappingStore}
+              onApply={setMappingStore}
+              onClose={() => setShowMappingEditor(false)}
+            />
+          )}
+
+          {/* Mapping preview — combined Artikelgroep + Merk result */}
+          {productsoortRef.col && (() => {
+            const psData = getSheetInfo(productsoortRef.sheet || primarySheet).data;
+            const mkData = merkRef.col ? getSheetInfo(merkRef.sheet || primarySheet).data : null;
+            type S = { ps: string; mk: string; ag: string; eh: string };
+            const seen = new Set<string>();
+            const samples: S[] = [];
+            for (let i = 0; i < psData.length && samples.length < 5; i++) {
+              const ps = String(psData[i]?.[productsoortRef.col] ?? '').trim();
+              if (!ps) continue;
+              const mk = mkData && merkRef.col ? String(mkData[i]?.[merkRef.col] ?? '').trim() : '';
+              const key = `${ps}||${mk}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              const baseAg = resolveArtikelgroep(ps, mappingStore);
+              samples.push({ ps, mk, ag: mk ? `${baseAg} - ${mk}` : baseAg, eh: resolveEenheid(ps, mappingStore) });
+            }
+            if (!samples.length) return null;
+            return (
+              <div className="card" style={{ padding: '10px 14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>
+                    {lang === 'nl' ? 'Koppeling voorbeeld' : 'Mapping preview'}
+                  </span>
+                  <Tooltip text={lang === 'nl' ? 'Eerste unieke rijen — toont hoe Productsoort en Merk samen de Artikelgroep en Eenheid bepalen.' : 'First unique rows — shows how Productsoort and Merk combine to produce Artikelgroep and Eenheid.'} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {samples.map(s => (
+                    <div key={`${s.ps}||${s.mk}`} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span className="col-preview-val" style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>
+                        {s.ps}{s.mk ? ` + ${s.mk}` : ''}
+                      </span>
+                      <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>→</span>
+                      <span className="col-preview-val">{s.ag}</span>
+                      <span className="col-preview-val" style={{ opacity: 0.7 }}>{s.eh}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Description columns */}
           <div className="card">

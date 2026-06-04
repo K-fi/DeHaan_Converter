@@ -1,9 +1,4 @@
-import {
-  PRODUCTSOORT_TO_ARTIKELGROEP,
-  PRODUCTSOORT_TO_EENHEID,
-  DEFAULT_ARTIKELGROEP,
-  DEFAULT_EENHEID,
-} from '../constants/converterMappings';
+import { resolveArtikelgroep, resolveEenheid, type MappingStore } from './mappingStore';
 import type { ColRef } from '../types';
 
 export interface ConverterArgs {
@@ -12,6 +7,7 @@ export interface ConverterArgs {
   startingCode: number;
   hoofdleverancier: string;
   btwInkoop: string;
+  mappingStore: MappingStore;
   barcodeRef: ColRef;
   productsoortRef: ColRef;
   kostprijsRef: ColRef;
@@ -81,14 +77,17 @@ function getVal(
 const CHUNK = 5000;
 
 function buildRow(args: ConverterArgs, idx: number, activiefVanaf: string): Record<string, unknown> {
-  const { sheetsData, startingCode, hoofdleverancier, btwInkoop, barcodeRef, productsoortRef,
-    kostprijsRef, bestelnummerRef, verkoopprijsRef, veiligheidsclassificatieRef,
-    geslachtRef, maatRef, merkRef, kleurRef, kleurMapping, artikelcodeRef,
-    omschrijvingRefs, productnaamRefs } = args;
+  const { sheetsData, startingCode, hoofdleverancier, btwInkoop, mappingStore,
+    barcodeRef, productsoortRef, kostprijsRef, bestelnummerRef, verkoopprijsRef,
+    veiligheidsclassificatieRef, geslachtRef, maatRef, merkRef, kleurRef,
+    kleurMapping, artikelcodeRef, omschrijvingRefs, productnaamRefs } = args;
 
   const productsoort = getVal(sheetsData, idx, productsoortRef);
-  const eenheid = PRODUCTSOORT_TO_EENHEID[productsoort] ?? DEFAULT_EENHEID;
-  const artikelgroep = PRODUCTSOORT_TO_ARTIKELGROEP[productsoort] ?? DEFAULT_ARTIKELGROEP;
+  const eenheid = resolveEenheid(productsoort, mappingStore);
+  const baseArtikelgroep = resolveArtikelgroep(productsoort, mappingStore);
+  const merk = getVal(sheetsData, idx, merkRef);
+  const artikelgroep = merk ? `${baseArtikelgroep} - ${merk}` : baseArtikelgroep;
+
   const omschrijvingRaw = omschrijvingRefs.map(ref => getVal(sheetsData, idx, ref)).filter(Boolean).join(' ');
   const productnaamRaw = productnaamRefs.map(ref => getVal(sheetsData, idx, ref)).filter(Boolean).join(' ');
   const bestelnummer = getVal(sheetsData, idx, bestelnummerRef);
@@ -119,7 +118,7 @@ function buildRow(args: ConverterArgs, idx: number, activiefVanaf: string): Reco
     '2026 Controle JW': 'NG',
     'Geslacht': geslachtRef.col ? (geslachtVal || 'Unisex') : 'Unisex',
     'Maat': getVal(sheetsData, idx, maatRef),
-    'Merk': getVal(sheetsData, idx, merkRef),
+    'Merk': merk,
     'KMS Synchronisatie': 'Ja',
     'Kleur': (() => { const v = getVal(sheetsData, idx, kleurRef); return kleurMapping[v] ?? v; })(),
     'Productnaam': productnaamRaw,
