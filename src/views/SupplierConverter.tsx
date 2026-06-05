@@ -18,7 +18,12 @@ import { detectHeaderRow, parseFromHeaderRow } from '../utils/headers';
 import PresetBar from '../components/PresetBar';
 import type { ParsedFile, BannerInfo, ColRef, Preset, SupplierConverterMappings } from '../types';
 
-const PRODUCTSOORT_HINTS  = ['productsoort', 'soort', 'type', 'categorie', 'category'];
+const PRODUCTSOORT_HINTS  = [
+  'productsoort', 'soort', 'type', 'categorie', 'category',
+  'producttype', 'artikeltype', 'itemtype', 'productgroep',
+  'artikelsoort', 'klasse', 'classificatie', 'classification',
+  'segment', 'division', 'productcategory', 'productcategorie',
+];
 const KOSTPRIJS_HINTS     = ['kostprijs', 'inkoopprijs', 'cost', 'inkoop', 'purchase'];
 const BESTELNR_HINTS      = ['bestelnummer', 'bestel', 'ordernum', 'ordernr', 'leveranciersnr', 'artikelnummer', 'refnr'];
 const VERKOOPPRIJS_HINTS  = ['verkoopprijs', 'verkoop', 'salesprice', 'selling', 'adviesprijs'];

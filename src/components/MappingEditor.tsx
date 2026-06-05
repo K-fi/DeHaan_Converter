@@ -223,6 +223,7 @@ export default function MappingEditor({ fileValues, store, onApply, onClose }: M
 
   const [showAll, setShowAll] = useState(false);
   const [sortByCustom, setSortByCustom] = useState(false);
+  const [searchA, setSearchA] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [importError, setImportError] = useState(false);
@@ -344,6 +345,15 @@ export default function MappingEditor({ fileValues, store, onApply, onClose }: M
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localStore, fileValues, sortByCustomAll]);
 
+  const filteredFileValues = useMemo(() => {
+    if (!searchA.trim()) return sortedFileValues;
+    const q = searchA.toLowerCase();
+    return sortedFileValues.filter(k =>
+      k.toLowerCase().includes(q) ||
+      effectiveAg(k, localStore).toLowerCase().includes(q),
+    );
+  }, [sortedFileValues, searchA, localStore]);
+
   const filtered = useMemo(() => {
     if (!search.trim()) return allRows;
     const q = search.toLowerCase();
@@ -411,6 +421,12 @@ export default function MappingEditor({ fileValues, store, onApply, onClose }: M
                   {confirmResetFile ? (lang === 'nl' ? 'Bevestigen?' : 'Confirm?') : (lang === 'nl' ? '↺ Reset' : '↺ Reset')}
                 </button>
               </div>
+              <input
+                type="text" value={searchA}
+                onChange={e => setSearchA(e.target.value)}
+                placeholder={lang === 'nl' ? 'Zoeken…' : 'Search…'}
+                style={{ width: '100%', fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--border-md)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', marginBottom: 6, boxSizing: 'border-box' }}
+              />
               {unknownCount > 0 && (
                 <Banner type="warning" icon="⚠"
                   message={
@@ -421,11 +437,16 @@ export default function MappingEditor({ fileValues, store, onApply, onClose }: M
                 />
               )}
               <ColHeaders t={t} />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 12 }}>
-                {sortedFileValues.map((key, i) => (
-                  <MappingRow key={key} rowKey={key} store={localStore} setStore={setLocalStore}
-                    datalistId={`ag-file-${i}`} inFileValues />
-                ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 12, maxHeight: 280, overflowY: 'auto' }}>
+                {filteredFileValues.length === 0
+                  ? <div style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '4px 0' }}>
+                      {lang === 'nl' ? `Geen resultaten voor "${searchA}".` : `No results for "${searchA}".`}
+                    </div>
+                  : filteredFileValues.map((key, i) => (
+                    <MappingRow key={key} rowKey={key} store={localStore} setStore={setLocalStore}
+                      datalistId={`ag-file-${i}`} inFileValues />
+                  ))
+                }
               </div>
             </>
           ) : (
