@@ -15,10 +15,21 @@ export type MappingStore = Record<string, CustomEntry>;
 
 const LS_KEY = 'dehaan_mapping_store_v1';
 
+function isValidStore(v: unknown): v is MappingStore {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+  return Object.values(v as Record<string, unknown>).every(
+    e => e && typeof e === 'object' && !Array.isArray(e) &&
+         typeof (e as Record<string, unknown>).artikelgroep === 'string' &&
+         typeof (e as Record<string, unknown>).eenheid === 'string',
+  );
+}
+
 export function loadMappingStore(): MappingStore {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    return raw ? (JSON.parse(raw) as MappingStore) : {};
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    return isValidStore(parsed) ? parsed : {};
   } catch {
     return {};
   }
@@ -37,7 +48,9 @@ export function exportMappingStore(store: MappingStore): void {
   const a = document.createElement('a');
   a.href = url;
   a.download = 'productsoort_mappings.json';
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
@@ -50,8 +63,8 @@ export function importMappingStore(
   r.onload = e => {
     try {
       const data = JSON.parse(e.target!.result as string) as Record<string, unknown>;
-      const raw = (data.mappings ?? data.customMappings ?? data) as MappingStore;
-      if (raw && typeof raw === 'object' && !Array.isArray(raw)) cb(raw);
+      const raw = data.mappings ?? data.customMappings ?? data;
+      if (isValidStore(raw)) cb(raw);
       else onError();
     } catch {
       onError();

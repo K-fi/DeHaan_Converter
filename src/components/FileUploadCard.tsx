@@ -121,9 +121,9 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
   }
 
   function handleRedetect() {
-    if (!rawSheetRef.current) return;
-    const idx = Math.max(0, headerRowNum - 1);
+    if (!rawSheetRef.current || !workbookRef.current) return;
     const rows = sheetTo2D(rawSheetRef.current);
+    const idx = Math.max(0, Math.min(headerRowNum - 1, rows.length - 1));
     const parsed = parseFromHeaderRow(rows, idx);
     setPreview({ cols: parsed.cols, data: parsed.data });
     setBanner({
@@ -133,7 +133,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
         ? `Rij <strong>${idx + 1}</strong> gebruikt. <strong>${parsed.cols.length} kolommen</strong> en <strong>${parsed.data.length} rijen</strong> gevonden.`
         : `Using row <strong>${idx + 1}</strong>. Found <strong>${parsed.cols.length} columns</strong> and <strong>${parsed.data.length} rows</strong>.`,
     });
-    onFileLoaded({ data: parsed.data, cols: parsed.cols, rawSheet: rawSheetRef.current, workbook: workbookRef.current!, fileName: fileNameRef.current });
+    onFileLoaded({ data: parsed.data, cols: parsed.cols, rawSheet: rawSheetRef.current, workbook: workbookRef.current, fileName: fileNameRef.current });
   }
 
   return (

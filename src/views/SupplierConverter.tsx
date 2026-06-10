@@ -486,7 +486,8 @@ export default function SupplierConverter() {
 
     const matchCount = checked.length - missing.length;
     const matchRate = checked.length > 0 ? matchCount / checked.length : 1;
-    const name = `<strong>${preset.name}</strong>`;
+    const safeName = preset.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const name = `<strong>${safeName}</strong>`;
     setBanner(
       missing.length === 0
         ? { type: 'success', icon: '✓', message: lang === 'nl' ? `Preset ${name} geladen — alle ${checked.length} kolommen gevonden.` : `Preset ${name} loaded — all ${checked.length} columns matched.` }
@@ -1043,6 +1044,9 @@ export default function SupplierConverter() {
       {/* ── Step 3: Preview & Download ── */}
       {step === 3 && outputData && (
         <>
+          {outputData.length === 0 && (
+            <Banner type="warning" icon="⚠" message={lang === 'nl' ? 'Het bronbestand bevat geen rijen. Er is niets om te converteren.' : 'The source file contains no rows. There is nothing to convert.'} />
+          )}
           <div className="card">
             <div className="card-title">{t('scConvCompleteTitle')}</div>
             <div style={{ marginBottom: '1rem' }}>

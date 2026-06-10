@@ -107,6 +107,11 @@ function removeKey(key: string, store: MappingStore, setStore: (s: MappingStore)
   const next = { ...store }; delete next[key]; setStore(next);
 }
 
+const ARTIKELGROEP_ALL_OPTS = [...new Set([
+  ...ARTIKELGROEP_OPTIONS,
+  ...Object.values(PRODUCTSOORT_TO_ARTIKELGROEP),
+])].sort();
+
 // ── row component ────────────────────────────────────────
 
 interface RowProps {
@@ -560,8 +565,3 @@ export default function MappingEditor({ fileValues, store, onApply, onClose }: M
     </div>
   );
 }
-
-const ARTIKELGROEP_ALL_OPTS = [...new Set([
-  ...ARTIKELGROEP_OPTIONS,
-  ...Object.values(PRODUCTSOORT_TO_ARTIKELGROEP),
-])].sort();

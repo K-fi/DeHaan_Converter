@@ -141,7 +141,7 @@ export default function PriceUpdater() {
     const supplEanData    = getSupplSheet(supplEanSheet).data;
     const supplCodeData   = supplCode ? getSupplSheet(supplCodeSheet).data : [];
     const supplPriceData  = getSupplSheet(supplPriceSheet).data;
-    const sRowCount       = supplFile!.data.length;
+    const sRowCount       = supplEanData.length;
     const capSupplEan     = supplEan;
     const capSupplCode    = supplCode;
     const capSupplExtra   = supplExtraEans;
@@ -351,6 +351,7 @@ export default function PriceUpdater() {
   }
 
   function reapplyDupeSelections() {
+    if (!matchArgsRef.current || !matchSheetArgsRef.current) return;
     try {
       const newSupplByEan: Record<string, unknown> = {};
       Object.keys(allOccurrencesRef.current).forEach(ean => {
@@ -407,7 +408,7 @@ export default function PriceUpdater() {
   }
 
   function downloadReport()   { withDownload(() => downloadCSV(results!.reportRows, 'price_update_report.csv')); }
-  function downloadDupes()    { withDownload(() => downloadXLSX(results!.dupeData, Object.keys(results!.dupeData[0] || {}), 'duplicate_eans.xls', 'Duplicates')); }
+  function downloadDupes()    { withDownload(() => { if (!results?.dupeData.length) return; downloadXLSX(results.dupeData, Object.keys(results.dupeData[0]), 'duplicate_eans.xls', 'Duplicates'); }); }
   function downloadNullEans() { withDownload(() => { if (!results!.nullEanData.length) return; downloadXLSX(results!.nullEanData, Object.keys(results!.nullEanData[0] || {}), 'supplier_missing_ean.xls', 'Missing EAN'); }); }
   function downloadNullEansExact() { withDownload(() => { if (!results!.nullEanExactData.length) return; downloadXLSX(results!.nullEanExactData, Object.keys(results!.nullEanExactData[0] || {}), 'exact_missing_ean.xls', 'Missing EAN'); }); }
 
@@ -501,7 +502,8 @@ export default function PriceUpdater() {
 
     const matchCount = checked.length - missing.length;
     const matchRate = checked.length > 0 ? matchCount / checked.length : 1;
-    const name = `<strong>${preset.name}</strong>`;
+    const safeName = preset.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const name = `<strong>${safeName}</strong>`;
     setPresetBanner(
       missing.length === 0
         ? { type: 'success', icon: '✓', message: lang === 'nl' ? `Preset ${name} geladen — alle ${checked.length} kolommen gevonden.` : `Preset ${name} loaded — all ${checked.length} columns matched.` }

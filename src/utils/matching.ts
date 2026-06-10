@@ -14,5 +14,5 @@ export function normalizeEan(v: unknown): string {
 export function fmtDate(iso: string): string {
   if (!iso) return iso;
   const p = iso.split('-');
-  return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0].slice(2) : iso;
+  return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso;
 }

@@ -30,8 +30,8 @@ export function parseFromHeaderRow(
   const hrow = rows[idx];
   if (!hrow) return { cols: [], data: [] };
   const seen: Record<string, number> = {};
-  const cols = hrow.map(c => {
-    let n = String(c).trim() || ('Col' + Math.random().toString(36).slice(2, 5));
+  const cols = hrow.map((c, ci) => {
+    let n = String(c).trim() || ('Col_' + (ci + 1));
     if (seen[n]) { seen[n]++; n = n + '_' + seen[n]; } else { seen[n] = 1; }
     return n;
   });
