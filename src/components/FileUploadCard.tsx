@@ -21,6 +21,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
   const [banner, setBanner] = useState<BannerInfo | null>(null);
   const [isCsvFile, setIsCsvFile] = useState(false);
   const [sheets, setSheets] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState('');
   const [headerRowNum, setHeaderRowNum] = useState(1);
   const [preview, setPreview] = useState<{ cols: string[]; data: Record<string, unknown>[] } | null>(null);
   const [parsing, setParsing] = useState(false);
@@ -39,7 +40,10 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
     fileNameRef.current    = initialFile.fileName;
     activeSheetRef.current = initialFile.sheetName ?? initialFile.workbook.SheetNames[0] ?? '';
     const isMulti = initialFile.workbook.SheetNames.length > 1;
-    if (isMulti) setSheets(initialFile.workbook.SheetNames);
+    if (isMulti) {
+      setSheets(initialFile.workbook.SheetNames);
+      setSelectedSheet(activeSheetRef.current);
+    }
     setUploadedName('✓ ' + initialFile.fileName);
     setPreview({ cols: initialFile.cols, data: initialFile.data });
     setBanner({
@@ -56,6 +60,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
     const ws = wb.Sheets[sheetName];
     rawSheetRef.current    = ws;
     activeSheetRef.current = sheetName;
+    if (isMulti) setSelectedSheet(sheetName);
     const rows = sheetTo2D(ws);
     const hIdx = detectHeaderRow(rows);
     const parsed = parseFromHeaderRow(rows, hIdx);
@@ -98,6 +103,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
         const isMulti = wb.SheetNames.length > 1;
         if (isMulti) {
           setSheets(wb.SheetNames);
+          setSelectedSheet(wb.SheetNames[0]);
           setBanner({
             type: 'info',
             icon: '📑',
@@ -174,7 +180,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
       {!parsing && sheets.length > 1 && (
         <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
           <span>{t('fuSheetLabel')}:</span>
-          <select style={{ flex: 1, fontSize: 12, padding: '5px 8px' }} onChange={(e) => handleSheetChange(e.target.value)}>
+          <select value={selectedSheet} style={{ flex: 1, fontSize: 12, padding: '5px 8px' }} onChange={(e) => handleSheetChange(e.target.value)}>
             {sheets.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
