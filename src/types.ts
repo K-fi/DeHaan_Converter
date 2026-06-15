@@ -11,6 +11,7 @@ export interface ParsedFile {
   rawSheet: WorkSheet;
   workbook: WorkBook;
   fileName: string;
+  sheetName: string;
 }
 
 export interface BannerInfo {

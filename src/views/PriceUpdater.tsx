@@ -83,14 +83,14 @@ export default function PriceUpdater() {
     return parsed;
   }
 
-  function getExactSheet(sn: string) { return getOrParse(exactFile!.workbook, sn, exactSheetsRef.current, exactFile!.data, exactFile!.cols, exactFile!.workbook.SheetNames[0]); }
-  function getSupplSheet(sn: string) { return getOrParse(supplFile!.workbook, sn, supplSheetsRef.current, supplFile!.data, supplFile!.cols, supplFile!.workbook.SheetNames[0]); }
+  function getExactSheet(sn: string) { return getOrParse(exactFile!.workbook, sn, exactSheetsRef.current, exactFile!.data, exactFile!.cols, exactFile!.sheetName); }
+  function getSupplSheet(sn: string) { return getOrParse(supplFile!.workbook, sn, supplSheetsRef.current, supplFile!.data, supplFile!.cols, supplFile!.sheetName); }
 
   // ── Navigation ──────────────────────────────────────────
 
   function enterStep2() {
-    const pe = exactFile!.workbook.SheetNames[0];
-    const ps = supplFile!.workbook.SheetNames[0];
+    const pe = exactFile!.sheetName;
+    const ps = supplFile!.sheetName;
     exactSheetsRef.current = {}; supplSheetsRef.current = {};
 
     const { cols: eCols, data: eData } = exactFile!;

@@ -27,15 +27,17 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
 
   const { lang, t } = useLang();
 
-  const workbookRef = useRef<WorkBook | null>(null);
-  const rawSheetRef = useRef<WorkSheet | null>(null);
-  const fileNameRef = useRef('');
+  const workbookRef    = useRef<WorkBook | null>(null);
+  const rawSheetRef    = useRef<WorkSheet | null>(null);
+  const fileNameRef    = useRef('');
+  const activeSheetRef = useRef('');
 
   useEffect(() => {
     if (!initialFile) return;
-    workbookRef.current = initialFile.workbook;
-    rawSheetRef.current = initialFile.rawSheet;
-    fileNameRef.current = initialFile.fileName;
+    workbookRef.current    = initialFile.workbook;
+    rawSheetRef.current    = initialFile.rawSheet;
+    fileNameRef.current    = initialFile.fileName;
+    activeSheetRef.current = initialFile.sheetName ?? initialFile.workbook.SheetNames[0] ?? '';
     const isMulti = initialFile.workbook.SheetNames.length > 1;
     if (isMulti) setSheets(initialFile.workbook.SheetNames);
     setUploadedName('✓ ' + initialFile.fileName);
@@ -52,7 +54,8 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
 
   function applySheet(wb: WorkBook, sheetName: string, isMulti: boolean) {
     const ws = wb.Sheets[sheetName];
-    rawSheetRef.current = ws;
+    rawSheetRef.current    = ws;
+    activeSheetRef.current = sheetName;
     const rows = sheetTo2D(ws);
     const hIdx = detectHeaderRow(rows);
     const parsed = parseFromHeaderRow(rows, hIdx);
@@ -69,7 +72,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
         ? `Koptekst op rij <strong>${hIdx + 1}</strong>. <strong>${parsed.cols.length} kolommen</strong> en <strong>${parsed.data.length} rijen</strong> gevonden.${rowWarning}`
         : `Header on row <strong>${hIdx + 1}</strong>. Found <strong>${parsed.cols.length} columns</strong> and <strong>${parsed.data.length} rows</strong>.${rowWarning}`,
     });
-    onFileLoaded({ data: parsed.data, cols: parsed.cols, rawSheet: ws, workbook: wb, fileName: fileNameRef.current });
+    onFileLoaded({ data: parsed.data, cols: parsed.cols, rawSheet: ws, workbook: wb, fileName: fileNameRef.current, sheetName });
   }
 
   const MAX_FILE_MB = 100;
@@ -133,7 +136,7 @@ export default function FileUploadCard({ title, icon, onFileLoaded, initialFile 
         ? `Rij <strong>${idx + 1}</strong> gebruikt. <strong>${parsed.cols.length} kolommen</strong> en <strong>${parsed.data.length} rijen</strong> gevonden.`
         : `Using row <strong>${idx + 1}</strong>. Found <strong>${parsed.cols.length} columns</strong> and <strong>${parsed.data.length} rows</strong>.`,
     });
-    onFileLoaded({ data: parsed.data, cols: parsed.cols, rawSheet: rawSheetRef.current, workbook: workbookRef.current, fileName: fileNameRef.current });
+    onFileLoaded({ data: parsed.data, cols: parsed.cols, rawSheet: rawSheetRef.current, workbook: workbookRef.current, fileName: fileNameRef.current, sheetName: activeSheetRef.current });
   }
 
   return (

@@ -275,7 +275,7 @@ export default function SupplierConverter() {
   // ── Sheet helpers ────────────────────────────────────────
 
   const sheetNames   = supplFile?.workbook.SheetNames ?? [];
-  const primarySheet = sheetNames[0] ?? '';
+  const primarySheet = supplFile?.sheetName ?? sheetNames[0] ?? '';
 
   function getSheetInfo(sheetName: string): { cols: string[]; data: Record<string, unknown>[] } {
     if (!supplFile) return { cols: [], data: [] };
@@ -500,7 +500,7 @@ export default function SupplierConverter() {
   // ── Navigation ──────────────────────────────────────────
 
   function enterStep2() {
-    const ps = supplFile!.workbook.SheetNames[0];
+    const ps = supplFile!.sheetName;
     parsedSheetsRef.current = {};
     const { cols, data } = supplFile!;
     const det: Record<string, string | null> = {
